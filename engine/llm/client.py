@@ -1,5 +1,5 @@
 from ollama import Client
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 import os, json, asyncio
 
 CLOUD_MODEL = os.environ.get("OLLAMA_CLOUD_MODEL", "gpt-oss:120b")

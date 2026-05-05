@@ -1,8 +1,7 @@
 from fastapi import APIRouter, UploadFile, HTTPException, WebSocket, WebSocketDisconnect
 from parsers.pdf_extract import extract_text_from_pdf
 from parsers.llm_structured import extract_profile
-from parsers.jd_analyzer import analyze_jd, MatchResult
-from models.profile import MasterProfile
+from parsers.jd_analyzer import analyze_jd
 from models.application import ApplicationStartRequest, ManualAnswerRequest
 from db.jobs_client import get_jobs, get_job_by_url, get_job_filters
 from db.crud import (
@@ -67,7 +66,6 @@ async def extract_resume_base64(body: dict):
     import base64
 
     data = body.get("data", "")
-    filename = body.get("filename", "resume.pdf")
     try:
         pdf_bytes = base64.b64decode(data)
     except Exception:
@@ -153,37 +151,43 @@ async def start_application(body: ApplicationStartRequest):
     if _active_agent and not _active_agent.paused:
         raise HTTPException(409, "An application is already running")
 
-    _active_agent = GreenhouseAgent(
-        body.profile
-        if isinstance(body.profile, dict)
-        else body.profile.model_dump()
-        if hasattr(body.profile, "model_dump")
-        else {}
-    )
+    profile_data = body.profile if isinstance(body.profile, dict) else {}
+    _active_agent = GreenhouseAgent(profile_data)
+    job_url = body.job_url
 
     async def run_agent():
-        global _active_streamer
+        global _active_agent, _active_streamer
         pw, browser, context = await create_stealth_browser()
         _active_streamer = ScreencastStreamer()
         try:
             page = await context.new_page()
-            await page.goto(body.job_url, wait_until="networkidle", timeout=30000)
+            await page.goto(job_url, wait_until="networkidle", timeout=30000)
             await _active_streamer.start(
                 page, lambda frame: manager.broadcast_screencast(frame)
             )
-            _active_agent.on_step = lambda step, status, detail="": (
-                asyncio.ensure_future(manager.broadcast_log(step, status, detail))
-            )
-            await manager.broadcast_status("running")
-            await _active_agent.run(page)
+            if _active_agent:
+                _active_agent.on_step = lambda step, status, detail="": (
+                    asyncio.ensure_future(manager.broadcast_log(step, status, detail))
+                )
+            await manager.broadcast_status("Running")
+            if _active_agent:
+                await _active_agent.run(page)
+        except Exception as e:
+            await manager.broadcast_status("Idle")
+            import logging
+
+            logging.exception("Agent run failed: %s", e)
         finally:
-            await _active_streamer.stop()
+            if _active_streamer:
+                await _active_streamer.stop()
             _active_streamer = None
+            _active_agent = None
+            _agent_task = None
             await browser.close()
             await pw.stop()
 
     _agent_task = asyncio.create_task(run_agent())
-    return {"status": "started", "job_url": body.job_url}
+    return {"status": "started", "job_url": job_url}
 
 
 @router.post("/pause")
@@ -191,8 +195,8 @@ async def pause_application():
     if not _active_agent:
         raise HTTPException(404, "No active application")
     await _active_agent.pause("User requested pause")
-    await manager.broadcast_status("paused", "User requested pause")
-    return {"status": "paused"}
+    await manager.broadcast_status("Paused", "User requested pause")
+    return {"status": "Paused"}
 
 
 @router.post("/resume")
@@ -200,8 +204,8 @@ async def resume_application():
     if not _active_agent:
         raise HTTPException(404, "No active application")
     await _active_agent.resume()
-    await manager.broadcast_status("running")
-    return {"status": "running"}
+    await manager.broadcast_status("Running")
+    return {"status": "Running"}
 
 
 @router.post("/answer")
