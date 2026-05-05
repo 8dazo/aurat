@@ -104,12 +104,12 @@ export function LivePreview() {
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     e.preventDefault()
-    electronAPI.python.request("send_input", { type: "keydown", key: e.key, code: e.code })
+    electronAPI.python.sendInput({ type: "keydown", key: e.key, code: e.code })
   }, [])
 
   const handleKeyUp = useCallback((e: React.KeyboardEvent) => {
     e.preventDefault()
-    electronAPI.python.request("send_input", { type: "keyup", key: e.key, code: e.code })
+    electronAPI.python.sendInput({ type: "keyup", key: e.key, code: e.code })
   }, [])
 
   return (
