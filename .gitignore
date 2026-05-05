@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+dist/
+python-dist/
+python-build/
+.DS_Store
+*.pyc
+__pycache__/
+.venv/
+.env
+*.dmg
+*.app.env

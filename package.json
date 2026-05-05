@@ -1,0 +1,47 @@
+{
+  "name": "aurat-ai",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev:ui": "cd ui && npm run dev",
+    "dev:desktop": "cd desktop && npm run dev",
+    "dev": "concurrently \"npm run dev:ui\" \"npm run dev:desktop\"",
+    "build:ui": "cd ui && npm run build",
+    "build:desktop": "cd desktop && npm run build",
+    "build:python": "bash scripts/build-python.sh",
+    "build": "npm run build:ui && npm run build:python && npm run build:desktop && electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.aurat.app",
+    "productName": "Aurat",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "desktop/dist/**/*",
+      "ui/out/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "python-dist/aurat-engine",
+        "to": "python-bin/aurat-engine"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": ["dmg"],
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "binaries": [
+        "Contents/Resources/python-bin/aurat-engine/aurat-engine"
+      ],
+      "minimumSystemVersion": "12.0.0"
+    }
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "electron-builder": "^25.1.8"
+  }
+}
