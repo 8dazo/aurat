@@ -3,9 +3,22 @@ from parsers.pdf_extract import extract_text_from_pdf
 from parsers.llm_structured import extract_profile
 from parsers.jd_analyzer import analyze_jd, MatchResult
 from models.profile import MasterProfile
+from models.application import ApplicationStartRequest, ManualAnswerRequest
 from db.jobs_client import get_jobs, get_job_by_url, get_job_filters
+from db.crud import (
+    get_profile as db_get_profile,
+    save_profile as db_save_profile,
+    get_history as db_get_history,
+    save_history as db_save_history,
+    get_qna_memory as db_get_qna,
+    save_qna_memory as db_save_qna,
+)
 from agents.greenhouse import GreenhouseAgent
-from utils.stealth import create_stealth_browser
+from utils.stealth import (
+    create_stealth_browser,
+    check_browser_installed,
+    install_browser,
+)
 from api.ws import manager
 from utils.screencast import ScreencastStreamer
 import httpx
@@ -16,18 +29,49 @@ router = APIRouter()
 
 _active_agent: GreenhouseAgent | None = None
 _agent_task: asyncio.Task | None = None
+_active_streamer: ScreencastStreamer | None = None
 
 
 @router.get("/health")
 async def health():
-    return {"status": "ok"}
+    browser_info = await check_browser_installed()
+    return {"status": "ok", "service": "aurat-engine", "browser": browser_info}
+
+
+@router.post("/install-browser")
+async def install_chromium():
+    result = await install_browser()
+    return result
 
 
 @router.post("/extract")
 async def extract_resume(file: UploadFile):
-    if file.content_type != "application/pdf":
+    if file.content_type and file.content_type != "application/pdf":
         raise HTTPException(400, "PDF only")
     pdf_bytes = await file.read()
+    if len(pdf_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(400, "Max 10MB")
+    try:
+        text = extract_text_from_pdf(pdf_bytes)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    try:
+        profile = await extract_profile(text)
+        return profile.model_dump()
+    except Exception as e:
+        raise HTTPException(422, f"Extraction failed: {e}")
+
+
+@router.post("/extract-base64")
+async def extract_resume_base64(body: dict):
+    import base64
+
+    data = body.get("data", "")
+    filename = body.get("filename", "resume.pdf")
+    try:
+        pdf_bytes = base64.b64decode(data)
+    except Exception:
+        raise HTTPException(400, "Invalid base64 data")
     if len(pdf_bytes) > 10 * 1024 * 1024:
         raise HTTPException(400, "Max 10MB")
     try:
@@ -69,7 +113,7 @@ async def list_jobs(
     page: int = 1,
     pageSize: int = 50,
 ):
-    params = {"page": page, "pageSize": pageSize}
+    params = {"page": str(page), "pageSize": str(pageSize)}
     if search:
         params["search"] = search
     if atsType:
@@ -101,26 +145,30 @@ async def job_detail(url: str):
 
 
 @router.post("/apply")
-async def start_application(body: dict):
-    global _active_agent, _agent_task
-    job_url = body.get("job_url")
-    profile = body.get("profile")
-    ats_type = body.get("ats_type", "greenhouse")
-    if not job_url or not profile:
+async def start_application(body: ApplicationStartRequest):
+    global _active_agent, _agent_task, _active_streamer
+    if not body.job_url or not body.profile:
         raise HTTPException(400, "job_url and profile required")
 
     if _active_agent and not _active_agent.paused:
         raise HTTPException(409, "An application is already running")
 
-    _active_agent = GreenhouseAgent(profile)
+    _active_agent = GreenhouseAgent(
+        body.profile
+        if isinstance(body.profile, dict)
+        else body.profile.model_dump()
+        if hasattr(body.profile, "model_dump")
+        else {}
+    )
 
     async def run_agent():
+        global _active_streamer
         pw, browser, context = await create_stealth_browser()
-        streamer = ScreencastStreamer()
+        _active_streamer = ScreencastStreamer()
         try:
             page = await context.new_page()
-            await page.goto(job_url, wait_until="networkidle", timeout=30000)
-            await streamer.start(
+            await page.goto(body.job_url, wait_until="networkidle", timeout=30000)
+            await _active_streamer.start(
                 page, lambda frame: manager.broadcast_screencast(frame)
             )
             _active_agent.on_step = lambda step, status, detail="": (
@@ -129,12 +177,13 @@ async def start_application(body: dict):
             await manager.broadcast_status("running")
             await _active_agent.run(page)
         finally:
-            await streamer.stop()
+            await _active_streamer.stop()
+            _active_streamer = None
             await browser.close()
             await pw.stop()
 
     _agent_task = asyncio.create_task(run_agent())
-    return {"status": "started", "job_url": job_url}
+    return {"status": "started", "job_url": body.job_url}
 
 
 @router.post("/pause")
@@ -142,6 +191,7 @@ async def pause_application():
     if not _active_agent:
         raise HTTPException(404, "No active application")
     await _active_agent.pause("User requested pause")
+    await manager.broadcast_status("paused", "User requested pause")
     return {"status": "paused"}
 
 
@@ -150,17 +200,70 @@ async def resume_application():
     if not _active_agent:
         raise HTTPException(404, "No active application")
     await _active_agent.resume()
+    await manager.broadcast_status("running")
     return {"status": "running"}
 
 
 @router.post("/answer")
-async def submit_answer(body: dict):
-    question = body.get("question", "")
-    answer = body.get("answer", "")
+async def submit_answer(body: ManualAnswerRequest):
     if _active_agent:
-        await _active_agent.answer_question(question, answer)
+        await _active_agent.answer_question(body.question, body.answer)
         await _active_agent.resume()
     return {"status": "answered"}
+
+
+@router.post("/send_input")
+async def send_input(body: dict):
+    if not _active_streamer:
+        raise HTTPException(404, "No active browser session")
+    event_type = body.get("type", "")
+    if event_type.startswith("mouse"):
+        await _active_streamer.dispatch_mouse(
+            event_type,
+            int(body.get("x", 0)),
+            int(body.get("y", 0)),
+            button=str(body.get("button", "left")),
+        )
+    elif event_type.startswith("key"):
+        await _active_streamer.dispatch_key_event(body)
+    return {"status": "ok"}
+
+
+@router.get("/db/profile")
+async def db_get_profile_route():
+    return await db_get_profile()
+
+
+@router.post("/db/profile")
+async def db_save_profile_route(body: dict):
+    return await db_save_profile(body)
+
+
+@router.get("/db/history")
+async def db_get_history_route(filters: str | None = None):
+    parsed = json.loads(filters) if filters else None
+    return await db_get_history(parsed)
+
+
+@router.post("/db/history")
+async def db_save_history_route(body: dict):
+    return await db_save_history(body)
+
+
+@router.get("/db/qna/{question_hash}")
+async def db_get_qna_route(question_hash: str):
+    result = await db_get_qna(question_hash)
+    return result if result else {"answer": None}
+
+
+@router.post("/db/qna")
+async def db_save_qna_route(body: dict):
+    return await db_save_qna(
+        body.get("questionHash", ""),
+        body.get("question", ""),
+        body.get("answer", ""),
+        body.get("appId", 0),
+    )
 
 
 @router.websocket("/ws/screencast")

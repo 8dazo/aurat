@@ -1,7 +1,10 @@
 import { app, BrowserWindow } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import * as path from 'path'
+import dotenv from 'dotenv'
 import { registerIpcHandlers } from './ipc-handlers'
+
+dotenv.config({ path: path.join(__dirname, '..', '.env') })
 
 let mainWindow: BrowserWindow | null = null
 let pyProc: ChildProcess | null = null

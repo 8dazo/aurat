@@ -29,17 +29,18 @@ export function ResumeDropzone({ onProfileExtracted }: ResumeDropzoneProps) {
 
       setIsExtracting(true)
       try {
-        const formData = new FormData()
-        formData.append("file", file)
-
         const arrayBuffer = await file.arrayBuffer()
-        const uint8Array = new Uint8Array(arrayBuffer)
-        const payload = {
-          filename: file.name,
-          content: Array.from(uint8Array),
-        }
+        const base64 = btoa(
+          new Uint8Array(arrayBuffer).reduce(
+            (data, byte) => data + String.fromCharCode(byte),
+            ""
+          )
+        )
 
-        const result = await electronAPI.python.request("/extract", payload)
+        const result = await electronAPI.python.request("/extract-base64", {
+          filename: file.name,
+          data: base64,
+        })
         onProfileExtracted(result as MasterProfile)
         toast.success("Resume extracted successfully")
       } catch (err) {

@@ -18,7 +18,8 @@ class ApplicationState(BaseModel):
 
 class ApplicationStartRequest(BaseModel):
     job_url: str
-    profile_id: int = 1
+    profile: dict = {}
+    ats_type: str = "greenhouse"
 
 
 class ApplicationPauseRequest(BaseModel):
@@ -30,6 +31,5 @@ class ApplicationResumeRequest(BaseModel):
 
 
 class ManualAnswerRequest(BaseModel):
-    application_id: str
     question: str
     answer: str
