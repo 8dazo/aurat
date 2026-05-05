@@ -36,7 +36,16 @@ export default function HistoryPage() {
 
   useEffect(() => {
     electronAPI.db.getHistory().then((data) => {
-      setHistory((data as HistoryEntry[]) || [])
+      const mapped = ((data as Record<string, unknown>[]) || []).map((item: Record<string, unknown>) => ({
+        id: String(item.id ?? ""),
+        jobTitle: String(item.job_title ?? item.jobTitle ?? ""),
+        company: String(item.company ?? ""),
+        platform: String(item.ats_platform ?? item.platform ?? ""),
+        matchScore: item.match_score != null ? Number(item.match_score) : (item.matchScore != null ? Number(item.matchScore) : null),
+        status: String(item.status ?? "pending") as HistoryEntry["status"],
+        date: String(item.created_at ?? item.date ?? ""),
+      }))
+      setHistory(mapped)
       setLoading(false)
     }).catch(() => {
       setHistory([])

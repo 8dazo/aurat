@@ -11,7 +11,9 @@ class BaseAgent(ABC):
         self.pause_reason: str | None = None
         self.steps_log: list[dict] = []
         self.custom_questions: list[dict] = []
-        self.on_step: Callable[[str, str, str], None] | None = None
+        self.on_step: (
+            Callable[[str, str, str], None] | Callable[[str, str, str], object] | None
+        ) = None
 
     @abstractmethod
     async def detect_form_fields(self, page: Page) -> list[dict]:

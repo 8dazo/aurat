@@ -64,7 +64,7 @@ export function LivePreview() {
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const { sx, sy } = getScale()
       const rect = e.currentTarget.getBoundingClientRect()
-      electronAPI.python.request("send_input", {
+      electronAPI.python.sendInput({
         type: "mousedown",
         x: Math.round((e.clientX - rect.left) * sx),
         y: Math.round((e.clientY - rect.top) * sy),
@@ -78,7 +78,7 @@ export function LivePreview() {
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const { sx, sy } = getScale()
       const rect = e.currentTarget.getBoundingClientRect()
-      electronAPI.python.request("send_input", {
+      electronAPI.python.sendInput({
         type: "mouseup",
         x: Math.round((e.clientX - rect.left) * sx),
         y: Math.round((e.clientY - rect.top) * sy),
@@ -92,7 +92,7 @@ export function LivePreview() {
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const { sx, sy } = getScale()
       const rect = e.currentTarget.getBoundingClientRect()
-      electronAPI.python.request("send_input", {
+      electronAPI.python.sendInput({
         type: "mousemove",
         x: Math.round((e.clientX - rect.left) * sx),
         y: Math.round((e.clientY - rect.top) * sy),
