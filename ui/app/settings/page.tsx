@@ -25,7 +25,7 @@ export default function SettingsPage() {
   const [customModel, setCustomModel] = useState("")
   const [llmTestStatus, setLlmTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle")
 
-  const [dbUrl, setDbUrl] = useState("")
+  const [dbConfigured, setDbConfigured] = useState(false)
   const [dbStatus, setDbStatus] = useState<"unknown" | "connected" | "not-configured" | "testing" | "error">("unknown")
 
   const [pwStatus, setPwStatus] = useState<"unknown" | "installed" | "not-installed" | "installing" | "checking">("unknown")
@@ -44,34 +44,15 @@ export default function SettingsPage() {
       } catch {}
     }
 
-    const envUrl = process.env.NEXT_PUBLIC_DATABASE_URL || ""
-    if (envUrl) {
-      setDbUrl(maskUrl(envUrl))
-      checkDbConnection()
-    } else {
-      setDbStatus("not-configured")
-    }
-
+    checkDbConnection()
     checkPlaywright()
   }, [])
-
-  function maskUrl(url: string): string {
-    try {
-      const parsed = new URL(url)
-      if (parsed.password) {
-        parsed.password = "****"
-      }
-      return parsed.toString()
-    } catch {
-      return "****"
-    }
-  }
 
   async function testLlmConnection() {
     setLlmTestStatus("testing")
     try {
-      const res = await fetch("/health")
-      if (res.ok) {
+      const res = await electronAPI.python.request("/health")
+      if (res && typeof res === "object" && (res as Record<string, unknown>).status === "ok") {
         setLlmTestStatus("success")
       } else {
         setLlmTestStatus("error")
@@ -84,7 +65,8 @@ export default function SettingsPage() {
   async function checkDbConnection() {
     setDbStatus("testing")
     try {
-      await electronAPI.db.getProfile()
+      const profile = await electronAPI.db.getProfile()
+      setDbConfigured(true)
       setDbStatus("connected")
     } catch {
       setDbStatus("error")
@@ -95,7 +77,7 @@ export default function SettingsPage() {
     setPwStatus("checking")
     try {
       const result = await electronAPI.python.request("/health")
-      if (result && typeof result === "object" && "browser" in (result as Record<string, unknown>)) {
+      if (result && typeof result === "object" && (result as Record<string, unknown>).browser) {
         setPwStatus("installed")
         setBrowserVersion((result as Record<string, unknown>).browser as string)
       } else {
@@ -211,11 +193,6 @@ export default function SettingsPage() {
           <CardDescription>Database connection settings</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>DATABASE_URL</Label>
-            <Input value={dbUrl} readOnly className="font-mono text-xs" />
-          </div>
-
           <div className="flex items-center gap-3">
             <Badge
               className={
@@ -316,7 +293,7 @@ export default function SettingsPage() {
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Platform</span>
-            <span className="font-mono">{typeof navigator !== "undefined" ? navigator.platform : "Unknown"}</span>
+            <span className="font-mono">{electronAPI.app.getPlatform()}</span>
           </div>
           <Separator />
           <div className="flex items-center justify-between text-sm">
