@@ -104,14 +104,14 @@ class GreenhouseAgent(BaseAgent):
                 if not is_checked:
                     await el.click()
         elif field_type == "file":
-            async with page.expect_file_chooser(timeout=5000):
-                await el.click()
-            file_chooser = await page.expect_file_chooser(timeout=5000)
             import os
 
             resolved = (
                 value if os.path.isabs(value) else os.path.join(os.getcwd(), value)
             )
+            async with page.expect_file_chooser(timeout=5000) as fc_info:
+                await el.click()
+            file_chooser = await fc_info.value
             if os.path.exists(resolved):
                 await file_chooser.set_files(resolved)
         else:
