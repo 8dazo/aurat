@@ -123,9 +123,11 @@ async def start_application(body: dict):
             await streamer.start(
                 page, lambda frame: manager.broadcast_screencast(frame)
             )
-            await _active_agent.run(
-                page, on_step=lambda step: manager.broadcast_log(json.dumps(step))
+            _active_agent.on_step = lambda step, status, detail="": (
+                asyncio.ensure_future(manager.broadcast_log(step, status, detail))
             )
+            await manager.broadcast_status("running")
+            await _active_agent.run(page)
         finally:
             await streamer.stop()
             await browser.close()

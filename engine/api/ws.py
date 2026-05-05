@@ -1,3 +1,4 @@
+import json
 from fastapi import WebSocket
 
 
@@ -11,30 +12,47 @@ class ConnectionManager:
         self.screencast_connections.append(websocket)
 
     async def disconnect_screencast(self, websocket: WebSocket):
-        self.screencast_connections.remove(websocket)
+        if websocket in self.screencast_connections:
+            self.screencast_connections.remove(websocket)
 
     async def broadcast_screencast(self, frame: str):
+        msg = json.dumps({"type": "frame", "frame": frame})
         for ws in self.screencast_connections[:]:
             try:
-                await ws.send_text(frame)
+                await ws.send_text(msg)
             except Exception:
-                self.screencast_connections.remove(ws)
+                if ws in self.screencast_connections:
+                    self.screencast_connections.remove(ws)
+
+    async def broadcast_status(self, status: str, pause_reason: str | None = None):
+        msg = json.dumps(
+            {"type": "status", "status": status, "pause_reason": pause_reason}
+        )
+        for ws in self.screencast_connections[:]:
+            try:
+                await ws.send_text(msg)
+            except Exception:
+                if ws in self.screencast_connections:
+                    self.screencast_connections.remove(ws)
 
     async def connect_log(self, websocket: WebSocket):
         await websocket.accept()
         self.log_connections.append(websocket)
 
     async def disconnect_log(self, websocket: WebSocket):
-        self.log_connections.remove(
-            websocket
-        ) if websocket in self.log_connections else None
+        if websocket in self.log_connections:
+            self.log_connections.remove(websocket)
 
-    async def broadcast_log(self, message: str):
+    async def broadcast_log(self, step: str, status: str, detail: str = ""):
+        msg = json.dumps(
+            {"type": "log", "message": detail or status, "step": step, "status": status}
+        )
         for ws in self.log_connections[:]:
             try:
-                await ws.send_text(message)
+                await ws.send_text(msg)
             except Exception:
-                self.log_connections.remove(ws)
+                if ws in self.log_connections:
+                    self.log_connections.remove(ws)
 
 
 manager = ConnectionManager()

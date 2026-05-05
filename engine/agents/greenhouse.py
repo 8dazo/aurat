@@ -3,6 +3,7 @@ from playwright.async_api import Page
 from utils.human_input import human_type, human_click, human_delay
 from llm.client import LLMClient
 import json
+import asyncio
 
 llm = LLMClient()
 
@@ -103,17 +104,23 @@ class GreenhouseAgent(BaseAgent):
                 if not is_checked:
                     await el.click()
         elif field_type == "file":
+            async with page.expect_file_chooser(timeout=5000):
+                await el.click()
             file_chooser = await page.expect_file_chooser(timeout=5000)
-            async with file_chooser:
-                await file_chooser.set_files(value)
+            import os
+
+            resolved = (
+                value if os.path.isabs(value) else os.path.join(os.getcwd(), value)
+            )
+            if os.path.exists(resolved):
+                await file_chooser.set_files(resolved)
         else:
             selector = await el.evaluate("el => el.id || el.name || ''")
             if selector:
+                has_id = await el.evaluate("el => !!el.id")
                 await human_type(
                     page,
-                    f"#{selector}"
-                    if selector.startswith("")
-                    else f"[name='{selector}']",
+                    f"#{selector}" if has_id else f"[name='{selector}']",
                     value,
                 )
             else:
@@ -141,7 +148,7 @@ class GreenhouseAgent(BaseAgent):
         confidence_threshold = 60
         for i, mapping in enumerate(mappings):
             while self.paused:
-                await __import__("asyncio").sleep(0.5)
+                await asyncio.sleep(0.5)
 
             if mapping.get("confidence", 0) >= confidence_threshold and mapping.get(
                 "value"
@@ -164,7 +171,17 @@ class GreenhouseAgent(BaseAgent):
                 )
                 await self.pause(f"Custom question: {mapping['label']}")
                 while self.paused:
-                    await __import__("asyncio").sleep(0.5)
+                    await asyncio.sleep(0.5)
+                answer = next(
+                    (
+                        q["answer"]
+                        for q in self.custom_questions
+                        if q["question"] == mapping["label"]
+                    ),
+                    None,
+                )
+                if answer and i < len(fields):
+                    await self.fill_field(page, fields[i], answer)
                 self.log_step(f"custom_{mapping['label']}", "completed")
             else:
                 self.log_step(
@@ -176,7 +193,7 @@ class GreenhouseAgent(BaseAgent):
         self.log_step("pre_submit", "paused", "Awaiting user review")
         await self.pause("Review before submission")
         while self.paused:
-            await __import__("asyncio").sleep(0.5)
+            await asyncio.sleep(0.5)
 
         self.log_step("submit", "running")
         await self.submit(page)
