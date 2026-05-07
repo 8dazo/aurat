@@ -8,6 +8,8 @@ python-build/
 *.pyc
 __pycache__/
 .venv/
+engine/.venv/
+*.db
 .env
 *.dmg
 *.app.env

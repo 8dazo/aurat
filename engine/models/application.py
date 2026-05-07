@@ -20,6 +20,8 @@ class ApplicationStartRequest(BaseModel):
     job_url: str
     profile: dict = {}
     ats_type: str = "greenhouse"
+    job_title: str = ""
+    job_company: str = ""
 
 
 class ApplicationPauseRequest(BaseModel):

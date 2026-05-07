@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { electronAPI } from "@/lib/electron-api"
+import { toast } from "sonner"
 
 type ModelOption = "gpt-oss:120b-cloud" | "gpt-oss" | "custom"
 
@@ -41,7 +42,9 @@ export default function SettingsPage() {
         if (parsed.apiKey) setApiKey(parsed.apiKey)
         if (parsed.model) setModel(parsed.model)
         if (parsed.customModel) setCustomModel(parsed.customModel)
-      } catch {}
+      } catch {
+        console.warn("Failed to parse stored settings")
+      }
     }
 
     checkDbConnection()
@@ -58,6 +61,7 @@ export default function SettingsPage() {
         setLlmTestStatus("error")
       }
     } catch {
+      toast.error("Failed to test LLM connection")
       setLlmTestStatus("error")
     }
   }
@@ -69,6 +73,7 @@ export default function SettingsPage() {
       setDbConfigured(true)
       setDbStatus("connected")
     } catch {
+      setDbConfigured(false)
       setDbStatus("error")
     }
   }
@@ -84,6 +89,7 @@ export default function SettingsPage() {
         setPwStatus("not-installed")
       }
     } catch {
+      toast.error("Failed to check Playwright status")
       setPwStatus("not-installed")
     }
   }
@@ -94,6 +100,7 @@ export default function SettingsPage() {
       await electronAPI.python.request("/install-browser")
       await checkPlaywright()
     } catch {
+      toast.error("Failed to install Chromium")
       setPwStatus("not-installed")
     }
   }

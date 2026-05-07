@@ -4,20 +4,20 @@ import * as path from 'path'
 import dotenv from 'dotenv'
 import { registerIpcHandlers } from './ipc-handlers'
 
-dotenv.config({ path: path.join(__dirname, '..', '.env') })
+dotenv.config({ path: path.join(__dirname, '..', '..', '.env') })
 
 let mainWindow: BrowserWindow | null = null
 let pyProc: ChildProcess | null = null
 
 function startPythonBackend() {
   if (app.isPackaged) {
-    const exePath = path.join(process.resourcesPath, 'engine', 'aurat-engine')
+    const exePath = path.join(process.resourcesPath, 'python-bin', 'aurat-engine', 'aurat-engine')
     pyProc = spawn(exePath, [], {
       env: { ...process.env, PYTHONUNBUFFERED: '1' },
     })
   } else {
-    const uvicornPath = path.join(__dirname, '..', 'engine', '.venv', 'bin', 'uvicorn')
-    const engineDir = path.join(__dirname, '..', 'engine')
+    const uvicornPath = path.join(__dirname, '..', '..', 'engine', '.venv', 'bin', 'uvicorn')
+    const engineDir = path.join(__dirname, '..', '..', 'engine')
     pyProc = spawn(uvicornPath, ['main:app', '--port', '18732'], {
       cwd: engineDir,
       env: { ...process.env, PYTHONUNBUFFERED: '1' },
@@ -62,7 +62,7 @@ function createWindow() {
   })
 
   if (app.isPackaged) {
-    mainWindow.loadFile(path.join(__dirname, '../ui/out/index.html'))
+    mainWindow.loadFile(path.join(__dirname, '..', '..', 'ui', 'out', 'index.html'))
   } else {
     mainWindow.loadURL('http://localhost:3000')
     mainWindow.webContents.openDevTools()

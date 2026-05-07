@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -84,6 +85,18 @@ export function JobAnalyzer({ job, profile, onBack }: JobAnalyzerProps) {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<AnalyzeResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const router = useRouter()
+
+  const handleAutoApply = () => {
+    const params = new URLSearchParams({
+      url: job.url,
+      title: job.title,
+      company: job.company,
+      ats_type: job.ats_type || "greenhouse",
+    })
+    if (job.location) params.set("location", job.location)
+    router.push(`/apply?${params.toString()}`)
+  }
 
   const handleAnalyze = async () => {
     if (!profile) {
@@ -207,9 +220,8 @@ export function JobAnalyzer({ job, profile, onBack }: JobAnalyzerProps) {
             )}
           </CardContent>
           <CardFooter className="flex justify-end">
-            <Button disabled>
+            <Button onClick={handleAutoApply} disabled={!profile}>
               Auto-Apply
-              <span className="ml-2 text-xs opacity-60">(Coming soon)</span>
             </Button>
           </CardFooter>
         </Card>

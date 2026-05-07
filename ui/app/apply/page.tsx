@@ -3,13 +3,29 @@
 import { LivePreview } from "@/components/LivePreview"
 import { ControlPanel } from "@/components/ControlPanel"
 import { ManualIntervention } from "@/components/ManualIntervention"
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
+import { useSearchParams } from "next/navigation"
 import { useAgentWs } from "@/lib/use-agent-ws"
 import { electronAPI } from "@/lib/electron-api"
+import { toast } from "sonner"
+import type { MasterProfile } from "@/types"
 
-export default function ApplyPage() {
+function ApplyPageInner() {
+  const searchParams = useSearchParams()
   const [isPaused, setIsPaused] = useState(false)
   const [pauseReason, setPauseReason] = useState("")
+  const [profile, setProfile] = useState<MasterProfile | null>(null)
+
+  const jobUrl = searchParams.get("url") || ""
+  const jobTitle = searchParams.get("title") || ""
+  const jobCompany = searchParams.get("company") || ""
+  const atsType = searchParams.get("ats_type") || "greenhouse"
+
+  useEffect(() => {
+    electronAPI.db.getProfile().then((p) => {
+      if (p) setProfile(p as MasterProfile)
+    })
+  }, [])
 
   useAgentWs({
     onStatus: (status, reason) => {
@@ -19,14 +35,22 @@ export default function ApplyPage() {
   })
 
   const handleSubmitAnswer = async (answer: string) => {
-    await electronAPI.python.request("/answer", {
-      question: pauseReason,
-      answer,
-    })
+    try {
+      await electronAPI.python.request("/answer", {
+        question: pauseReason,
+        answer,
+      })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to submit answer")
+    }
   }
 
   const handleResume = async () => {
-    await electronAPI.python.request("/resume")
+    try {
+      await electronAPI.python.request("/resume")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to resume")
+    }
   }
 
   return (
@@ -35,7 +59,13 @@ export default function ApplyPage() {
         <LivePreview />
       </div>
       <div className="w-[400px] border-l border-border">
-        <ControlPanel />
+        <ControlPanel
+          jobUrl={jobUrl}
+          jobTitle={jobTitle}
+          jobCompany={jobCompany}
+          atsType={atsType}
+          profile={profile}
+        />
       </div>
       <ManualIntervention
         isPaused={isPaused}
@@ -46,5 +76,13 @@ export default function ApplyPage() {
         onResume={handleResume}
       />
     </div>
+  )
+}
+
+export default function ApplyPage() {
+  return (
+    <Suspense>
+      <ApplyPageInner />
+    </Suspense>
   )
 }

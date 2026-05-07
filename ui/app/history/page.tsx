@@ -38,12 +38,12 @@ export default function HistoryPage() {
     electronAPI.db.getHistory().then((data) => {
       const mapped = ((data as Record<string, unknown>[]) || []).map((item: Record<string, unknown>) => ({
         id: String(item.id ?? ""),
-        jobTitle: String(item.job_title ?? item.jobTitle ?? ""),
+        jobTitle: String(item.job_title ?? ""),
         company: String(item.company ?? ""),
-        platform: String(item.ats_platform ?? item.platform ?? ""),
-        matchScore: item.match_score != null ? Number(item.match_score) : (item.matchScore != null ? Number(item.matchScore) : null),
+        platform: String(item.ats_platform ?? ""),
+        matchScore: item.match_score != null ? Number(item.match_score) : null,
         status: String(item.status ?? "pending") as HistoryEntry["status"],
-        date: String(item.created_at ?? item.date ?? ""),
+        date: String(item.created_at ?? ""),
       }))
       setHistory(mapped)
       setLoading(false)

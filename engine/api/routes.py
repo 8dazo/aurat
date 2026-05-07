@@ -154,6 +154,8 @@ async def start_application(body: ApplicationStartRequest):
     profile_data = body.profile if isinstance(body.profile, dict) else {}
     _active_agent = GreenhouseAgent(profile_data)
     job_url = body.job_url
+    job_title = body.job_title
+    job_company = body.job_company
 
     async def run_agent():
         global _active_agent, _active_streamer
@@ -172,7 +174,36 @@ async def start_application(body: ApplicationStartRequest):
             await manager.broadcast_status("Running")
             if _active_agent:
                 await _active_agent.run(page)
+            await db_save_history(
+                {
+                    "job_url": job_url,
+                    "ats_platform": body.ats_type or "greenhouse",
+                    "job_title": job_title,
+                    "company": job_company,
+                    "match_score": None,
+                    "status": "completed",
+                    "steps_log": _active_agent.steps_log if _active_agent else [],
+                    "custom_questions": _active_agent.custom_questions
+                    if _active_agent
+                    else [],
+                }
+            )
+            await manager.broadcast_status("Idle")
         except Exception as e:
+            await db_save_history(
+                {
+                    "job_url": job_url,
+                    "ats_platform": body.ats_type or "greenhouse",
+                    "job_title": job_title,
+                    "company": job_company,
+                    "match_score": None,
+                    "status": "failed",
+                    "steps_log": _active_agent.steps_log if _active_agent else [],
+                    "custom_questions": _active_agent.custom_questions
+                    if _active_agent
+                    else [],
+                }
+            )
             await manager.broadcast_status("Idle")
             import logging
 
@@ -187,7 +218,12 @@ async def start_application(body: ApplicationStartRequest):
             await pw.stop()
 
     _agent_task = asyncio.create_task(run_agent())
-    return {"status": "started", "job_url": job_url}
+    return {
+        "status": "started",
+        "job_url": job_url,
+        "job_title": job_title,
+        "job_company": job_company,
+    }
 
 
 @router.post("/pause")

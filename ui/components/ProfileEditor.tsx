@@ -306,6 +306,38 @@ export function ProfileEditor({ profile }: ProfileEditorProps) {
         </Card>
       )}
 
+      {Object.keys(edited.custom_qna_memory).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Custom Q&A Memory</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {Object.entries(edited.custom_qna_memory).map(([hash, answer]) => (
+              <div key={hash} className="flex items-start gap-2 group">
+                <div className="flex-1 space-y-1">
+                  <p className="text-xs text-muted-foreground break-all">{hash}</p>
+                  <p className="text-sm">{answer}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                  onClick={() => {
+                    setEdited((prev) => {
+                      const next = { ...prev.custom_qna_memory }
+                      delete next[hash]
+                      return { ...prev, custom_qna_memory: next }
+                    })
+                  }}
+                >
+                  &times;
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={saving}>
           {saving ? "Saving..." : "Save Profile"}

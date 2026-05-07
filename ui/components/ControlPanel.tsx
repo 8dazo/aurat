@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { useAgentWs, type AgentStatus } from "@/lib/use-agent-ws"
 import { electronAPI } from "@/lib/electron-api"
+import { toast } from "sonner"
+import type { MasterProfile } from "@/types"
 
 const statusVariant: Record<AgentStatus, "default" | "secondary" | "destructive"> = {
   Idle: "secondary",
@@ -14,7 +16,15 @@ const statusVariant: Record<AgentStatus, "default" | "secondary" | "destructive"
   Paused: "destructive",
 }
 
-export function ControlPanel() {
+interface ControlPanelProps {
+  jobUrl?: string
+  jobTitle?: string
+  jobCompany?: string
+  atsType?: string
+  profile?: MasterProfile | null
+}
+
+export function ControlPanel({ jobUrl = "", jobTitle = "", jobCompany = "", atsType = "greenhouse", profile = null }: ControlPanelProps) {
   const [status, setStatus] = useState<AgentStatus>("Idle")
   const [pauseReason, setPauseReason] = useState<string | null>(null)
   const [stepLogs, setStepLogs] = useState<{ message: string; timestamp: number }[]>([])
@@ -40,23 +50,37 @@ export function ControlPanel() {
   }, [stepLogs])
 
   const handleStart = useCallback(async () => {
+    if (!jobUrl) {
+      toast.error("No job URL provided. Go to Jobs and select a job to apply.")
+      return
+    }
+    if (!profile) {
+      toast.error("No profile loaded. Upload your resume first.")
+      return
+    }
     setLoading(true)
     try {
       await electronAPI.python.request("/apply", {
-        job_url: "",
-        profile: {},
-        ats_type: "greenhouse",
+        job_url: jobUrl,
+        job_title: jobTitle,
+        job_company: jobCompany,
+        ats_type: atsType,
+        profile: profile,
       })
-    } catch {} finally {
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start application")
+    } finally {
       setLoading(false)
     }
-  }, [])
+  }, [jobUrl, jobTitle, jobCompany, atsType, profile])
 
   const handlePause = useCallback(async () => {
     setLoading(true)
     try {
       await electronAPI.python.request("/pause")
-    } catch {} finally {
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to pause")
+    } finally {
       setLoading(false)
     }
   }, [])
@@ -65,7 +89,9 @@ export function ControlPanel() {
     setLoading(true)
     try {
       await electronAPI.python.request("/resume")
-    } catch {} finally {
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to resume")
+    } finally {
       setLoading(false)
     }
   }, [])
@@ -78,6 +104,13 @@ export function ControlPanel() {
           <Badge variant={statusVariant[status]}>{status}</Badge>
         </div>
       </div>
+
+      {jobUrl && (
+        <div className="px-4 pb-3 space-y-1">
+          <p className="text-sm font-medium truncate">{jobTitle || "Untitled Job"}</p>
+          <p className="text-xs text-muted-foreground truncate">{jobCompany}</p>
+        </div>
+      )}
 
       <Separator />
 
