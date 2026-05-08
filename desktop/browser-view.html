@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Browser Preview</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1a1a; }
+    .status-bar {
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 28px; background: #2a2a2a; color: #aaa;
+      display: flex; align-items: center; padding: 0 8px;
+      font: 11px -apple-system, BlinkMacSystemFont, sans-serif;
+      z-index: 10;
+    }
+    .status-bar .url { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;
+      transition: background 0.3s;
+    }
+    .dot.connected { background: #4ade80; }
+    .dot.disconnected { background: #f87171; }
+    .dot.connecting { background: #facc15; }
+    #viewport {
+      position: absolute; top: 28px; left: 0; right: 0; bottom: 0;
+    }
+    .loading-overlay {
+      position: absolute; inset: 0; top: 28px;
+      display: flex; align-items: center; justify-content: center;
+      color: #666; font: 14px -apple-system, BlinkMacSystemFont, sans-serif;
+      z-index: 5;
+    }
+  </style>
+</head>
+<body>
+  <div class="status-bar">
+    <div id="dot" class="dot disconnected"></div>
+    <div id="url" class="url">Waiting for browser...</div>
+  </div>
+  <canvas id="viewport"></canvas>
+  <div id="loading" class="loading-overlay">Connecting to browser...</div>
+
+  <script>
+    const canvas = document.getElementById('viewport');
+    const ctx = canvas.getContext('2d');
+    const dotEl = document.getElementById('dot');
+    const urlEl = document.getElementById('url');
+    const loadingEl = document.getElementById('loading');
+
+    let ws = null;
+    let cdpWsUrl = null;
+    let msgId = 1;
+    let viewportWidth = 1280;
+    let viewportHeight = 800;
+    let connected = false;
+    let screencastActive = false;
+
+    function updateDot(state) {
+      dotEl.className = 'dot ' + state;
+    }
+
+    function connectDirect(wsUrl) {
+      cdpWsUrl = wsUrl;
+      updateDot('connecting');
+
+      if (ws) { try { ws.close(); } catch(e) {} }
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        connected = true;
+        updateDot('connected');
+        loadingEl.style.display = 'none';
+        startScreencast();
+      };
+
+      ws.onmessage = (event) => {
+        let data;
+        try {
+          if (typeof event.data !== 'string') return;
+          data = JSON.parse(event.data);
+        } catch(e) { return; }
+
+        if (data.method === 'Page.screencastFrame') {
+          handleScreencastFrame(data.params);
+        } else if (data.method === 'Page.frameNavigated') {
+          const url = data.params && data.params.frame && data.params.frame.url;
+          if (url) urlEl.textContent = url;
+        }
+      };
+
+      ws.onclose = () => {
+        connected = false;
+        screencastActive = false;
+        updateDot('disconnected');
+        if (cdpWsUrl) {
+          setTimeout(() => connectDirect(cdpWsUrl), 3000);
+        }
+      };
+
+      ws.onerror = () => {
+        try { ws.close(); } catch(e) {}
+      };
+    }
+
+    function sendCDP(method, params) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      const id = msgId++;
+      ws.send(JSON.stringify({ id, method, params: params || {} }));
+      return id;
+    }
+
+    function startScreencast() {
+      sendCDP('Page.startScreencast', {
+        format: 'jpeg',
+        quality: 70,
+        maxWidth: 1280,
+        maxHeight: 800,
+        everyNthFrame: 1,
+      });
+      screencastActive = true;
+    }
+
+    function handleScreencastFrame(params) {
+      const img = new Image();
+      img.onload = () => {
+        viewportWidth = img.width;
+        viewportHeight = img.height;
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+      };
+      img.src = 'data:image/jpeg;base64,' + params.data;
+      sendCDP('Page.screencastFrameAck', { sessionId: params.sessionId });
+    }
+
+    // Mouse input forwarding
+    function getScale() {
+      return {
+        sx: viewportWidth / canvas.clientWidth,
+        sy: viewportHeight / canvas.clientHeight,
+      };
+    }
+
+    function sendMouseEvent(type, e, button) {
+      if (!connected) return;
+      const { sx, sy } = getScale();
+      const rect = canvas.getBoundingClientRect();
+      const x = (e.clientX - rect.left) * sx;
+      const y = (e.clientY - rect.top) * sy;
+      const btnMap = { 0: 'left', 1: 'middle', 2: 'right' };
+      sendCDP('Input.dispatchMouseEvent', {
+        type,
+        x: Math.round(x),
+        y: Math.round(y),
+        button: btnMap[button] || 'left',
+        clickCount: type === 'mousePressed' ? 1 : 0,
+      });
+    }
+
+    canvas.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      sendMouseEvent('mousePressed', e, e.button);
+    });
+    canvas.addEventListener('mouseup', (e) => {
+      e.preventDefault();
+      sendMouseEvent('mouseReleased', e, e.button);
+    });
+    canvas.addEventListener('mousemove', (e) => {
+      if (!connected) return;
+      const { sx, sy } = getScale();
+      const rect = canvas.getBoundingClientRect();
+      sendCDP('Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        x: Math.round((e.clientX - rect.left) * sx),
+        y: Math.round((e.clientY - rect.top) * sy),
+      });
+    });
+    canvas.addEventListener('wheel', (e) => {
+      if (!connected) return;
+      e.preventDefault();
+      sendCDP('Input.dispatchMouseEvent', {
+        type: 'mouseWheel',
+        x: 0, y: 0,
+        deltaX: e.deltaX,
+        deltaY: e.deltaY,
+      });
+    }, { passive: false });
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Keyboard input forwarding
+    const keyMap = {
+      'Backspace': 'Backspace', 'Tab': 'Tab', 'Enter': 'Enter',
+      'Shift': 'Shift', 'Control': 'Control', 'Alt': 'Alt',
+      'Meta': 'Meta', 'Escape': 'Escape', 'ArrowUp': 'ArrowUp',
+      'ArrowDown': 'ArrowDown', 'ArrowLeft': 'ArrowLeft',
+      'ArrowRight': 'ArrowRight',
+    };
+
+    function sendKeyEvent(type, e) {
+      if (!connected) return;
+      const text = e.key.length === 1 ? e.key : undefined;
+      const key = keyMap[e.key] || e.key;
+      sendCDP('Input.dispatchKeyEvent', {
+        type,
+        key,
+        code: e.code,
+        text,
+        windowsVirtualKeyCode: e.keyCode,
+        modifiers: (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0),
+      });
+    }
+
+    document.addEventListener('keydown', (e) => {
+      sendKeyEvent('keyDown', e);
+      if (connected && e.key !== 'F5' && e.key !== 'F12') {
+        e.preventDefault();
+      }
+    });
+    document.addEventListener('keyup', (e) => {
+      sendKeyEvent('keyUp', e);
+    });
+
+    // Entry points called by Electron main process
+    window.__startCDP = function(wsUrl) {
+      connectDirect(wsUrl);
+    };
+
+    window.__stopCDP = function() {
+      cdpWsUrl = null;
+      if (ws) { try { ws.close(); } catch(e) {} ws = null; }
+      connected = false;
+      screencastActive = false;
+      updateDot('disconnected');
+      loadingEl.textContent = 'Browser disconnected';
+      loadingEl.style.display = 'flex';
+    };
+  </script>
+</body>
+</html>

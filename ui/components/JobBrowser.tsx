@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { useRouter } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -133,6 +134,18 @@ export function JobBrowser() {
     setSelectedJob(job)
   }
 
+  const router = useRouter()
+  const handleApply = (job: Job) => {
+    const params = new URLSearchParams({
+      url: job.url,
+      title: job.title,
+      company: job.company,
+      ats_type: job.atsType || "greenhouse",
+    })
+    if (job.location) params.set("location", job.location)
+    router.push(`/apply?${params.toString()}`)
+  }
+
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return "—"
     try {
@@ -244,7 +257,7 @@ export function JobBrowser() {
               <TableHead>Salary</TableHead>
               <TableHead>ATS Type</TableHead>
               <TableHead>Posted</TableHead>
-              <TableHead>Action</TableHead>
+              <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -276,13 +289,22 @@ export function JobBrowser() {
                   </TableCell>
                   <TableCell>{formatDate(job.postedAt)}</TableCell>
                   <TableCell>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleAnalyze(job)}
-                    >
-                      Analyze
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleAnalyze(job)}
+                      >
+                        Analyze
+                      </Button>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => handleApply(job)}
+                      >
+                        Apply
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

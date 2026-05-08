@@ -40,7 +40,7 @@ export function ControlPanel({ jobUrl = "", jobTitle = "", jobCompany = "", atsT
     setStepLogs((prev) => [...prev.slice(-200), { message, timestamp: Date.now() }])
   }, [])
 
-  useAgentWs({
+  const { connected } = useAgentWs({
     onStatus: handleStatus,
     onLog: handleLog,
   })
@@ -59,6 +59,7 @@ export function ControlPanel({ jobUrl = "", jobTitle = "", jobCompany = "", atsT
       return
     }
     setLoading(true)
+    setStatus("Running")
     try {
       await electronAPI.python.request("/apply", {
         job_url: jobUrl,
@@ -68,6 +69,7 @@ export function ControlPanel({ jobUrl = "", jobTitle = "", jobCompany = "", atsT
         profile: profile,
       })
     } catch (err) {
+      setStatus("Idle")
       toast.error(err instanceof Error ? err.message : "Failed to start application")
     } finally {
       setLoading(false)
@@ -102,6 +104,10 @@ export function ControlPanel({ jobUrl = "", jobTitle = "", jobCompany = "", atsT
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">Agent</span>
           <Badge variant={statusVariant[status]}>{status}</Badge>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className={`h-2 w-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-400 animate-pulse'}`} />
+          {connected ? 'Connected' : 'Connecting...'}
         </div>
       </div>
 

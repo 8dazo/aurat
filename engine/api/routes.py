@@ -24,12 +24,16 @@ import json
 import asyncio
 import logging
 
+from playwright.async_api import Page as PlaywrightPage
+
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
 _active_agent: GreenhouseAgent | None = None
 _agent_task: asyncio.Task | None = None
+_cdp_port: int | None = None
+_active_page: PlaywrightPage | None = None
 
 
 @router.get("/health")
@@ -145,7 +149,7 @@ async def job_detail(url: str):
 
 @router.post("/apply")
 async def start_application(body: ApplicationStartRequest):
-    global _active_agent, _agent_task
+    global _active_agent, _agent_task, _cdp_port, _active_page
     if not body.job_url or not body.profile:
         raise HTTPException(400, "job_url and profile required")
 
@@ -154,19 +158,38 @@ async def start_application(body: ApplicationStartRequest):
 
     profile_data = body.profile if isinstance(body.profile, dict) else {}
     _active_agent = GreenhouseAgent(profile_data)
+    _active_page = None
     job_url = body.job_url
     job_title = body.job_title
     job_company = body.job_company
 
     async def run_agent():
-        global _active_agent
+        global _active_agent, _active_page, _cdp_port
         logger.info("run_agent: creating stealth browser...")
-        pw, browser, context = await create_stealth_browser()
         try:
-            page = await context.new_page()
+            pw, browser, context, cdp_port = await create_stealth_browser()
+        except Exception as e:
+            logger.exception("run_agent: failed to create browser: %s", e)
+            await manager.broadcast_log(
+                "browser", "error", f"browser_launch_failed: {e}"
+            )
+            await manager.broadcast_status("Idle")
+            _active_agent = None
+            _agent_task = None
+            return
+        _cdp_port = cdp_port
+        page = await context.new_page()
+        _active_page = page
+        await page.goto("about:blank")
+        await manager.broadcast_log("browser", "started", f"cdp_port={cdp_port}")
+        try:
             logger.info("run_agent: navigating to %s", job_url)
+            await manager.broadcast_log(
+                " navigation", "running", f"Navigating to {job_url}"
+            )
             await page.goto(job_url, wait_until="networkidle", timeout=30000)
             logger.info("run_agent: page loaded")
+            await manager.broadcast_log("navigation", "completed", "Page loaded")
             if _active_agent:
                 _active_agent.on_step = lambda step, status, detail="": (
                     asyncio.ensure_future(manager.broadcast_log(step, status, detail))
@@ -190,6 +213,9 @@ async def start_application(body: ApplicationStartRequest):
             )
             await manager.broadcast_status("Idle")
         except Exception as e:
+            error_msg = f"{type(e).__name__}: {e}"
+            logger.exception("Agent run failed: %s", e)
+            await manager.broadcast_log("agent", "error", error_msg)
             await db_save_history(
                 {
                     "job_url": job_url,
@@ -205,12 +231,16 @@ async def start_application(body: ApplicationStartRequest):
                 }
             )
             await manager.broadcast_status("Idle")
-            logging.exception("Agent run failed: %s", e)
         finally:
             _active_agent = None
             _agent_task = None
-            await browser.close()
-            await pw.stop()
+            _active_page = None
+            _cdp_port = None
+            try:
+                await browser.close()
+                await pw.stop()
+            except Exception:
+                pass
 
     _agent_task = asyncio.create_task(run_agent())
     return {
@@ -245,6 +275,13 @@ async def submit_answer(body: ManualAnswerRequest):
         await _active_agent.answer_question(body.question, body.answer)
         await _active_agent.resume()
     return {"status": "answered"}
+
+
+@router.get("/cdp-info")
+async def get_cdp_info():
+    if _cdp_port is None:
+        return {"status": "no_browser"}
+    return {"status": "active", "cdp_port": _cdp_port}
 
 
 @router.get("/db/profile")

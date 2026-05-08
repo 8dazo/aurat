@@ -1,4 +1,5 @@
 import random
+import socket
 from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
 
@@ -11,15 +12,24 @@ VIEWPORTS = [
 ]
 
 
-async def create_stealth_browser():
+def _find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+async def create_stealth_browser(cdp_port: int | None = None):
+    if cdp_port is None:
+        cdp_port = _find_free_port()
     pw = await async_playwright().start()
     viewport = random.choice(VIEWPORTS)
     browser = await pw.chromium.launch(
         args=[
-            "--remote-debugging-port=0",
+            f"--remote-debugging-port={cdp_port}",
+            "--remote-allow-origins=*",
             "--disable-blink-features=AutomationControlled",
         ],
-        headless=False,
+        headless=True,
     )
     context = await browser.new_context(
         viewport=viewport,
@@ -31,7 +41,7 @@ async def create_stealth_browser():
     )
     stealth = Stealth()
     await stealth.apply_stealth_async(context)
-    return pw, browser, context
+    return pw, browser, context, cdp_port
 
 
 async def check_browser_installed() -> str | None:

@@ -43,6 +43,17 @@ class GreenhouseAgent(BaseAgent):
             field_type = {"select": "select", "textarea": "textarea"}.get(
                 tag, input_type
             )
+            label_text = ""
+            el_id = await el.get_attribute("id")
+            if el_id:
+                label_el = await page.query_selector(f'label[for="{el_id}"]')
+                if label_el:
+                    label_text = (await label_el.text_content() or "").strip()
+            if not label_text:
+                placeholder = await el.get_attribute("placeholder")
+                aria_label = await el.get_attribute("aria-label")
+                name_attr = await el.get_attribute("name")
+                label_text = placeholder or aria_label or name_attr or tag
             fields.append(
                 {
                     "label": label_text,

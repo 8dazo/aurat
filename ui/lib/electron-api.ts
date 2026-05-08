@@ -78,4 +78,18 @@ export const electronAPI = {
       return false
     },
   },
+  browser: {
+    attach: async (cdpPort: number): Promise<{ status: string; error?: string }> => {
+      if (typeof window !== 'undefined' && window.electronAPI?.browser?.attach) {
+        return window.electronAPI.browser.attach(cdpPort)
+      }
+      return { status: 'unavailable' }
+    },
+    detach: async (): Promise<{ status: string }> => {
+      if (typeof window !== 'undefined' && window.electronAPI?.browser?.detach) {
+        return window.electronAPI.browser.detach()
+      }
+      return { status: 'unavailable' }
+    },
+  },
 }

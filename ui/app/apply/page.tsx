@@ -2,12 +2,11 @@
 
 import { ControlPanel } from "@/components/ControlPanel"
 import { ManualIntervention } from "@/components/ManualIntervention"
-import { BrowserStatus } from "@/components/BrowserStatus"
+import { BrowserPreview } from "@/components/BrowserPreview"
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { useAgentWs } from "@/lib/use-agent-ws"
 import { electronAPI } from "@/lib/electron-api"
-import { toast } from "sonner"
 import type { MasterProfile } from "@/types"
 
 function ApplyPageInner() {
@@ -34,31 +33,12 @@ function ApplyPageInner() {
     },
   })
 
-  const handleSubmitAnswer = async (answer: string) => {
-    try {
-      await electronAPI.python.request("/answer", {
-        question: pauseReason,
-        answer,
-      })
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to submit answer")
-    }
-  }
-
-  const handleResume = async () => {
-    try {
-      await electronAPI.python.request("/resume")
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to resume")
-    }
-  }
-
   return (
-    <div data-fullscreen className="flex h-[calc(100vh-56px)]">
-      <div className="flex-1">
-        <BrowserStatus />
+    <div data-fullscreen className="flex h-[calc(100vh-0px)]">
+      <div className="flex-1 overflow-hidden">
+        <BrowserPreview />
       </div>
-      <div className="w-[400px] border-l border-border">
+      <div className="w-[400px] border-l border-border shrink-0 overflow-y-auto">
         <ControlPanel
           jobUrl={jobUrl}
           jobTitle={jobTitle}
@@ -72,8 +52,19 @@ function ApplyPageInner() {
         pauseReason={pauseReason}
         isQuestion={pauseReason.includes("Custom question")}
         question={pauseReason}
-        onSubmitAnswer={handleSubmitAnswer}
-        onResume={handleResume}
+        onSubmitAnswer={async (answer) => {
+          try {
+            await electronAPI.python.request("/answer", {
+              question: pauseReason,
+              answer,
+            })
+          } catch {}
+        }}
+        onResume={async () => {
+          try {
+            await electronAPI.python.request("/resume")
+          } catch {}
+        }}
       />
     </div>
   )

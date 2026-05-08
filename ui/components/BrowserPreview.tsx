@@ -1,0 +1,122 @@
+"use client"
+
+import { useEffect, useState, useCallback, useRef } from "react"
+import { useAgentWs } from "@/lib/use-agent-ws"
+import { electronAPI } from "@/lib/electron-api"
+import { Badge } from "@/components/ui/badge"
+import { Monitor } from "lucide-react"
+
+type AgentStatus = "Idle" | "Running" | "Paused"
+
+export function BrowserPreview() {
+  const [status, setStatus] = useState<AgentStatus>("Idle")
+  const [pauseReason, setPauseReason] = useState<string | null>(null)
+  const [cdpPort, setCdpPort] = useState<number | null>(null)
+  const [attached, setAttached] = useState(false)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const handleStatus = useCallback((s: AgentStatus, reason: string | null) => {
+    setStatus(s)
+    setPauseReason(reason)
+  }, [])
+
+  const handleLog = useCallback((message: string) => {
+    const match = message.match(/cdp_port=(\d+)/)
+    if (match) {
+      const port = parseInt(match[1], 10)
+      if (!isNaN(port) && port > 0) {
+        setCdpPort(port)
+      }
+    }
+  }, [])
+
+  const { connected } = useAgentWs({
+    onStatus: handleStatus,
+    onLog: handleLog,
+  })
+
+  useEffect(() => {
+    if (status === "Running" && !cdpPort) {
+      pollRef.current = setInterval(async () => {
+        try {
+          const result = await electronAPI.python.request("/cdp-info") as { status: string; cdp_port?: number }
+          if (result.status === "active" && result.cdp_port) {
+            setCdpPort(result.cdp_port)
+          }
+        } catch {}
+      }, 2000)
+      return () => { if (pollRef.current) clearInterval(pollRef.current) }
+    }
+  }, [status, cdpPort])
+
+  useEffect(() => {
+    if (cdpPort && status !== "Idle" && !attached) {
+      electronAPI.browser.attach(cdpPort).then((result) => {
+        if (result?.status === 'attached') {
+          setAttached(true)
+        }
+      }).catch(() => {})
+    }
+  }, [cdpPort, status, attached])
+
+  useEffect(() => {
+    if (status === "Idle" && attached) {
+      electronAPI.browser.detach().then(() => {
+        setAttached(false)
+        setCdpPort(null)
+      }).catch(() => {})
+    }
+  }, [status, attached])
+
+  return (
+    <div className="flex flex-col h-full bg-muted/30">
+      {!connected && status !== "Idle" && (
+        <div className="bg-yellow-500/10 text-yellow-600 text-xs px-3 py-1.5 border-b border-yellow-500/20">
+          Lost connection to backend — reconnecting...
+        </div>
+      )}
+
+      <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
+        {status === "Idle" && (
+          <div className="text-center space-y-3 max-w-md">
+            <Monitor className="h-12 w-12 mx-auto text-muted-foreground" />
+            <Badge variant="secondary" className="text-sm px-3 py-1">
+              Ready
+            </Badge>
+            <p className="text-sm text-muted-foreground">
+              Start an application to begin. The browser preview will appear here automatically.
+            </p>
+          </div>
+        )}
+
+        {status === "Running" && !attached && (
+          <div className="text-center space-y-3 max-w-md">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary mx-auto" />
+            <p className="text-sm text-muted-foreground">Starting browser preview...</p>
+          </div>
+        )}
+
+        {status === "Running" && attached && (
+          <div className="w-full space-y-3">
+            <Badge variant="default" className="text-sm px-3 py-1">
+              Agent Working — preview active
+            </Badge>
+          </div>
+        )}
+
+        {status === "Paused" && attached && (
+          <div className="w-full space-y-3">
+            <Badge variant="destructive" className="text-sm px-3 py-1">
+              Paused — You can interact with the browser
+            </Badge>
+            {pauseReason && (
+              <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 p-3 text-sm text-orange-600">
+                {pauseReason}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

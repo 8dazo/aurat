@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useCallback } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 
 const WS_URL = "ws://localhost:18732"
 const RECONNECT_DELAY = 2000
@@ -13,44 +13,58 @@ interface UseAgentWsOptions {
 }
 
 export function useAgentWs({ onStatus, onLog }: UseAgentWsOptions) {
-  const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const onStatusRef = useRef(onStatus)
+  const onLogRef = useRef(onLog)
+  onStatusRef.current = onStatus
+  onLogRef.current = onLog
 
-  const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return
-
-    const ws = new WebSocket(`${WS_URL}/ws/logs`)
-    wsRef.current = ws
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        if (data.type === "status" && onStatus) {
-          onStatus(data.status ?? "Idle", data.pause_reason ?? null)
-        } else if (data.type === "log" && onLog) {
-          onLog(data.message)
-        }
-      } catch { /* ignore non-JSON */ }
-    }
-
-    ws.onclose = () => {
-      wsRef.current = null
-      reconnectTimerRef.current = setTimeout(connect, RECONNECT_DELAY)
-    }
-
-    ws.onerror = () => {
-      ws.close()
-    }
-  }, [onStatus, onLog])
+  const [connected, setConnected] = useState(false)
 
   useEffect(() => {
-    connect()
-    return () => {
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
-      wsRef.current?.close()
-      wsRef.current = null
-    }
-  }, [connect])
+    let ws: WebSocket | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let cancelled = false
 
-  return wsRef
+    function connect() {
+      if (cancelled) return
+      ws = new WebSocket(`${WS_URL}/ws/logs`)
+
+      ws.onopen = () => {
+        setConnected(true)
+      }
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          if (data.type === "status" && onStatusRef.current) {
+            onStatusRef.current(data.status ?? "Idle", data.pause_reason ?? null)
+          } else if (data.type === "log" && onLogRef.current) {
+            onLogRef.current(data.message)
+          }
+        } catch { /* ignore non-JSON */ }
+      }
+
+      ws.onclose = () => {
+        setConnected(false)
+        ws = null
+        if (!cancelled) {
+          reconnectTimer = setTimeout(connect, RECONNECT_DELAY)
+        }
+      }
+
+      ws.onerror = () => {
+        ws?.close()
+      }
+    }
+
+    connect()
+
+    return () => {
+      cancelled = true
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      ws?.close()
+    }
+  }, [])
+
+  return { connected }
 }

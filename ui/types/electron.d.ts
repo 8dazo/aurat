@@ -19,6 +19,10 @@ declare global {
         getPlatform: () => string
         isPackaged: () => boolean
       }
+      browser: {
+        attach: (cdpPort: number) => Promise<{ status: string; error?: string }>
+        detach: () => Promise<{ status: string }>
+      }
     }
   }
 }
