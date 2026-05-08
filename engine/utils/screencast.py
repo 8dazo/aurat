@@ -8,12 +8,12 @@ class ScreencastStreamer:
         self.on_frame = None
 
     async def start(self, page: Page, on_frame_callback):
-        self.cdp = await page.context().new_cdp_session(page)
+        self.cdp = await page.context.new_cdp_session(page)
         await self.cdp.send(
             "Page.startScreencast",
             {
-                "format": "png",
-                "quality": 80,
+                "format": "jpeg",
+                "quality": 70,
                 "maxWidth": 1280,
                 "maxHeight": 800,
             },
@@ -26,9 +26,12 @@ class ScreencastStreamer:
                 return
             if self.on_frame:
                 await self.on_frame(event["data"])
-            await self.cdp.send(
-                "Page.screencastFrameAck", {"sessionId": event["sessionId"]}
-            )
+            try:
+                await self.cdp.send(
+                    "Page.screencastFrameAck", {"sessionId": event["sessionId"]}
+                )
+            except Exception:
+                pass
 
         self.cdp.on("Page.screencastFrame", handle_frame)
 

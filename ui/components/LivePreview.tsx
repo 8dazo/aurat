@@ -48,7 +48,7 @@ export function LivePreview() {
       canvas.height = img.height
       ctx.drawImage(img, 0, 0)
     }
-    img.src = "data:image/png;base64," + frame
+    img.src = "data:image/jpeg;base64," + frame
   }, [frame])
 
   const getScale = useCallback(() => {

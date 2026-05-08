@@ -11,7 +11,9 @@ async def create_stealth_browser():
         ],
         headless=False,
     )
-    context = await browser.new_context()
+    context = await browser.new_context(
+        viewport={"width": 1280, "height": 800},
+    )
     stealth = Stealth()
     await stealth.apply_stealth_async(context)
     return pw, browser, context
@@ -22,9 +24,14 @@ async def check_browser_installed() -> str | None:
         from playwright._impl._driver import compute_driver_executable
         import subprocess
 
-        driver = compute_driver_executable()
+        driver_executable = compute_driver_executable()
+        if isinstance(driver_executable, tuple):
+            node_path, cli_path = driver_executable
+            cmd = [node_path, cli_path]
+        else:
+            cmd = [str(driver_executable)]
         result = subprocess.run(
-            [str(driver), "install", "--dry-run", "chromium"],
+            cmd + ["install", "--dry-run", "chromium"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -41,9 +48,14 @@ async def install_browser() -> dict:
         from playwright._impl._driver import compute_driver_executable
         import subprocess
 
-        driver = compute_driver_executable()
+        driver_executable = compute_driver_executable()
+        if isinstance(driver_executable, tuple):
+            node_path, cli_path = driver_executable
+            cmd = [node_path, cli_path]
+        else:
+            cmd = [str(driver_executable)]
         result = subprocess.run(
-            [str(driver), "install", "chromium"],
+            cmd + ["install", "chromium"],
             capture_output=True,
             text=True,
             timeout=300,
