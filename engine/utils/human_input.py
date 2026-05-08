@@ -7,6 +7,7 @@ from playwright.async_api import Page
 async def human_type(
     page: Page, selector: str, text: str, min_delay: int = 50, max_delay: int = 150
 ):
+    await asyncio.sleep(random.uniform(0.1, 0.4))
     await page.click(selector)
     for char in text:
         await page.keyboard.type(char, delay=random.randint(min_delay, max_delay))
@@ -15,6 +16,7 @@ async def human_type(
 
 
 async def human_click(page: Page, selector: str):
+    await asyncio.sleep(random.uniform(0.1, 0.3))
     box = await page.locator(selector).bounding_box()
     if box is None:
         await page.click(selector)

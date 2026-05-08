@@ -1,9 +1,19 @@
+import random
 from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
+
+VIEWPORTS = [
+    {"width": 1280, "height": 800},
+    {"width": 1366, "height": 768},
+    {"width": 1440, "height": 900},
+    {"width": 1536, "height": 864},
+    {"width": 1920, "height": 1080},
+]
 
 
 async def create_stealth_browser():
     pw = await async_playwright().start()
+    viewport = random.choice(VIEWPORTS)
     browser = await pw.chromium.launch(
         args=[
             "--remote-debugging-port=0",
@@ -12,7 +22,12 @@ async def create_stealth_browser():
         headless=False,
     )
     context = await browser.new_context(
-        viewport={"width": 1280, "height": 800},
+        viewport=viewport,
+        user_agent=(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/136.0.0.0 Safari/537.36"
+        ),
     )
     stealth = Stealth()
     await stealth.apply_stealth_async(context)
