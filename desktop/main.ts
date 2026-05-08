@@ -1,7 +1,6 @@
 import { app, BrowserWindow, WebContentsView, ipcMain } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import * as path from 'path'
-import * as net from 'net'
 import * as http from 'http'
 import dotenv from 'dotenv'
 import { registerIpcHandlers } from './ipc-handlers'
@@ -11,19 +10,7 @@ dotenv.config({ path: path.join(__dirname, '..', '..', '.env') })
 let mainWindow: BrowserWindow | null = null
 let pyProc: ChildProcess | null = null
 let browserView: WebContentsView | null = null
-let cdpPort: number | null = null
 let infoServer: http.Server | null = null
-
-function findFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer()
-    server.listen(0, '127.0.0.1', () => {
-      const port = (server.address() as net.AddressInfo).port
-      server.close(() => resolve(port))
-    })
-    server.on('error', reject)
-  })
-}
 
 function startPythonBackend(cdpPortNum: number) {
   const env = { ...process.env, PYTHONUNBUFFERED: '1', ELECTRON_CDP_PORT: String(cdpPortNum) }
@@ -168,11 +155,14 @@ function resizeBrowserView() {
   })
 }
 
+// Set CDP port BEFORE app.whenReady() — Chromium reads this at startup.
+// Use a fixed port in the dynamic range; if it's taken, Chromium will find another.
+const CDP_PORT = 9222
+app.commandLine.appendSwitch('remote-debugging-port', String(CDP_PORT))
+let cdpPort: number = CDP_PORT
+
 app.whenReady().then(async () => {
   registerIpcHandlers()
-
-  cdpPort = await findFreePort()
-  app.commandLine.appendSwitch('remote-debugging-port', String(cdpPort))
 
   ipcMain.handle('browser:getCdpPort', () => cdpPort)
 

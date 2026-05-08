@@ -1,6 +1,10 @@
 import socket
+import asyncio
+import logging
 import httpx
 from playwright.async_api import async_playwright
+
+logger = logging.getLogger(__name__)
 
 VIEWPORTS = [
     {"width": 1280, "height": 800},
@@ -39,20 +43,58 @@ Object.defineProperty(navigator, 'languages', {
 """
 
 
-async def get_electron_cdp_url(port: int = 18733) -> str:
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(f"http://127.0.0.1:{port}/cdp-info")
-        data = resp.json()
-        cdp_port = data["cdp_port"]
+async def get_electron_cdp_url(
+    port: int = 18733, retries: int = 10, delay: float = 1.0
+) -> str:
+    """Get CDP WebSocket URL from Electron's info server, with retries."""
+    cdp_port = None
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(f"http://127.0.0.1:{cdp_port}/json")
-        targets = resp.json()
-        browser_target = next(
-            (t for t in targets if t.get("type") == "page"),
-            targets[0],
+    # Get CDP port from Electron info server
+    for attempt in range(retries):
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    f"http://127.0.0.1:{port}/cdp-info", timeout=2.0
+                )
+                data = resp.json()
+                cdp_port = data["cdp_port"]
+                logger.info("Got CDP port from Electron: %s", cdp_port)
+                break
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            logger.debug(
+                "CDP info server not ready (attempt %d/%d): %s", attempt + 1, retries, e
+            )
+            await asyncio.sleep(delay)
+
+    if cdp_port is None:
+        raise RuntimeError(
+            f"Could not reach Electron info server at http://127.0.0.1:{port}/cdp-info after {retries} attempts"
         )
-        return browser_target["webSocketDebuggerUrl"]
+
+    # Get WebSocket URL from CDP endpoint
+    for attempt in range(retries):
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    f"http://127.0.0.1:{cdp_port}/json", timeout=2.0
+                )
+                targets = resp.json()
+                browser_target = next(
+                    (t for t in targets if t.get("type") == "page"),
+                    targets[0],
+                )
+                ws_url = browser_target["webSocketDebuggerUrl"]
+                logger.info("Got CDP WebSocket URL: %s", ws_url)
+                return ws_url
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            logger.debug(
+                "CDP endpoint not ready (attempt %d/%d): %s", attempt + 1, retries, e
+            )
+            await asyncio.sleep(delay)
+
+    raise RuntimeError(
+        f"Could not reach CDP endpoint at http://127.0.0.1:{cdp_port}/json after {retries} attempts"
+    )
 
 
 async def connect_to_electron(cdp_url: str):
