@@ -24,6 +24,7 @@
     .dot.connecting { background: #facc15; }
     #viewport {
       position: absolute; top: 28px; left: 0; right: 0; bottom: 0;
+      width: 100%; height: 100%;
     }
     .loading-overlay {
       position: absolute; inset: 0; top: 28px;
@@ -55,10 +56,50 @@
     let viewportHeight = 800;
     let connected = false;
     let screencastActive = false;
+    let currentScreencastWidth = 0;
+    let currentScreencastHeight = 0;
+    let resizeTimer = null;
+    let frameGen = 0;
+    let lastMoveTime = 0;
 
     function updateDot(state) {
       dotEl.className = 'dot ' + state;
     }
+
+    function getDpr() {
+      return window.devicePixelRatio || 1;
+    }
+
+    function resizeCanvas() {
+      const dpr = getDpr();
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      if (w === 0 || h === 0) return;
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      maybeRestartScreencast();
+    }
+
+    function maybeRestartScreencast() {
+      if (!connected || !screencastActive) return;
+      const dpr = getDpr();
+      const newW = Math.round(canvas.clientWidth * dpr);
+      const newH = Math.round(canvas.clientHeight * dpr);
+      if (
+        Math.abs(newW - currentScreencastWidth) > 10 ||
+        Math.abs(newH - currentScreencastHeight) > 10
+      ) {
+        sendCDP('Page.stopScreencast');
+        startScreencast();
+      }
+    }
+
+    const ro = new ResizeObserver(() => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(resizeCanvas, 200);
+    });
+    ro.observe(canvas);
 
     function connectDirect(wsUrl) {
       cdpWsUrl = wsUrl;
@@ -71,6 +112,7 @@
         connected = true;
         updateDot('connected');
         loadingEl.style.display = 'none';
+        resizeCanvas();
         startScreencast();
       };
 
@@ -111,24 +153,33 @@
     }
 
     function startScreencast() {
+      const dpr = getDpr();
+      const w = Math.round(canvas.clientWidth * dpr);
+      const h = Math.round(canvas.clientHeight * dpr);
+      currentScreencastWidth = w;
+      currentScreencastHeight = h;
       sendCDP('Page.startScreencast', {
         format: 'jpeg',
-        quality: 70,
-        maxWidth: 1280,
-        maxHeight: 800,
+        quality: 85,
+        maxWidth: w || 1280,
+        maxHeight: h || 800,
         everyNthFrame: 1,
       });
       screencastActive = true;
     }
 
     function handleScreencastFrame(params) {
+      const gen = ++frameGen;
       const img = new Image();
       img.onload = () => {
+        if (gen !== frameGen) return;
         viewportWidth = img.width;
         viewportHeight = img.height;
-        canvas.width = img.width;
-        canvas.height = img.height;
-        ctx.drawImage(img, 0, 0);
+        const dpr = getDpr();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       };
       img.src = 'data:image/jpeg;base64,' + params.data;
       sendCDP('Page.screencastFrameAck', { sessionId: params.sessionId });
@@ -136,9 +187,11 @@
 
     // Mouse input forwarding
     function getScale() {
+      const cw = canvas.clientWidth || 1;
+      const ch = canvas.clientHeight || 1;
       return {
-        sx: viewportWidth / canvas.clientWidth,
-        sy: viewportHeight / canvas.clientHeight,
+        sx: viewportWidth / cw,
+        sy: viewportHeight / ch,
       };
     }
 
@@ -168,6 +221,9 @@
     });
     canvas.addEventListener('mousemove', (e) => {
       if (!connected) return;
+      const now = Date.now();
+      if (now - lastMoveTime < 16) return;
+      lastMoveTime = now;
       const { sx, sy } = getScale();
       const rect = canvas.getBoundingClientRect();
       sendCDP('Input.dispatchMouseEvent', {
@@ -179,9 +235,12 @@
     canvas.addEventListener('wheel', (e) => {
       if (!connected) return;
       e.preventDefault();
+      const { sx, sy } = getScale();
+      const rect = canvas.getBoundingClientRect();
       sendCDP('Input.dispatchMouseEvent', {
         type: 'mouseWheel',
-        x: 0, y: 0,
+        x: Math.round((e.clientX - rect.left) * sx),
+        y: Math.round((e.clientY - rect.top) * sy),
         deltaX: e.deltaX,
         deltaY: e.deltaY,
       });
