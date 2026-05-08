@@ -71,20 +71,16 @@ async def get_electron_cdp_url(
             f"Could not reach Electron info server at http://127.0.0.1:{port}/cdp-info after {retries} attempts"
         )
 
-    # Get WebSocket URL from CDP endpoint
+    # Get the browser-level WebSocket URL from /json/version (NOT /json which returns page targets)
     for attempt in range(retries):
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
-                    f"http://127.0.0.1:{cdp_port}/json", timeout=2.0
+                    f"http://127.0.0.1:{cdp_port}/json/version", timeout=2.0
                 )
-                targets = resp.json()
-                browser_target = next(
-                    (t for t in targets if t.get("type") == "page"),
-                    targets[0],
-                )
-                ws_url = browser_target["webSocketDebuggerUrl"]
-                logger.info("Got CDP WebSocket URL: %s", ws_url)
+                data = resp.json()
+                ws_url = data["webSocketDebuggerUrl"]
+                logger.info("Got browser CDP WebSocket URL: %s", ws_url)
                 return ws_url
         except (httpx.ConnectError, httpx.TimeoutException) as e:
             logger.debug(
@@ -93,28 +89,62 @@ async def get_electron_cdp_url(
             await asyncio.sleep(delay)
 
     raise RuntimeError(
-        f"Could not reach CDP endpoint at http://127.0.0.1:{cdp_port}/json after {retries} attempts"
+        f"Could not reach CDP endpoint at http://127.0.0.1:{cdp_port}/json/version after {retries} attempts"
     )
 
 
-async def connect_to_electron(cdp_url: str):
+async def connect_to_electron(cdp_url: str, info_port: int = 18733):
+    """Connect to the Electron browser via CDP.
+
+    Electron's CDP protocol does NOT allow creating new contexts or pages
+    (Target.createBrowserContext / Target.createTarget are both unsupported).
+    Instead we:
+      1. Ask Electron (via its info server) to create a WebContentsView —
+         this makes it appear as a page target in the CDP session.
+      2. Connect with Playwright and grab the existing default context.
+      3. Find the agent page (the WebContentsView) by excluding the main UI.
+    """
+    # Step 1 — ask Electron to attach a blank WebContentsView for the agent
+    logger.info("connect_to_electron: requesting agent view from Electron info server")
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"http://127.0.0.1:{info_port}/attach-agent-view", timeout=15.0
+            )
+            logger.info("attach-agent-view response: %s %s", resp.status_code, resp.text)
+    except Exception as e:
+        raise RuntimeError(f"Failed to trigger agent view in Electron: {e}") from e
+
+    # Small pause so the new WebContentsView registers as a CDP target
+    await asyncio.sleep(0.8)
+
+    # Step 2 — connect to the browser
     pw = await async_playwright().start()
     browser = await pw.chromium.connect_over_cdp(cdp_url)
 
-    context = await browser.new_context(
-        viewport=VIEWPORTS[0],
-        user_agent=(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/136.0.0.0 Safari/537.36"
-        ),
-    )
+    if not browser.contexts:
+        raise RuntimeError("No browser contexts available after connecting over CDP")
+    context = browser.contexts[0]
 
+    # Inject stealth patches into all pages in this context
     await context.add_init_script(STEALTH_SCRIPT)
 
-    page = await context.new_page()
+    # Step 3 — find the agent page (about:blank WebContentsView),
+    # NOT the main UI page (localhost:3000)
+    pages = context.pages
+    logger.info(
+        "connect_to_electron: found %d page(s): %s", len(pages), [p.url for p in pages]
+    )
+    agent_page = next(
+        (p for p in pages if "localhost:3000" not in (p.url or "")), None
+    )
+    if agent_page is None:
+        raise RuntimeError(
+            f"Could not find agent page in CDP context. "
+            f"Available pages: {[p.url for p in pages]}"
+        )
 
-    return pw, browser, context, page
+    return pw, browser, context, agent_page
 
 
 async def check_browser_installed() -> str | None:

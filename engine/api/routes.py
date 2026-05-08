@@ -254,6 +254,14 @@ async def start_application(body: ApplicationStartRequest):
                 await pw.stop()
             except Exception:
                 pass
+            # Tell Electron to remove the agent WebContentsView
+            try:
+                async with httpx.AsyncClient() as client:
+                    await client.get(
+                        "http://127.0.0.1:18733/detach-agent-view", timeout=5.0
+                    )
+            except Exception:
+                pass
 
     _agent_task = asyncio.create_task(run_agent())
     return {

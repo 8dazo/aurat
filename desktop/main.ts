@@ -46,10 +46,25 @@ async function waitForPython(): Promise<void> {
 }
 
 function startInfoServer() {
-  infoServer = http.createServer((req, res) => {
+  infoServer = http.createServer(async (req, res) => {
     if (req.url === '/cdp-info') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ cdp_port: cdpPort }))
+    } else if (req.url === '/attach-agent-view') {
+      // Called by Python backend before connecting via CDP.
+      // Creates the WebContentsView so it appears as a page target in CDP.
+      try {
+        await attachBrowserView('about:blank')
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ status: 'ok' }))
+      } catch (e: unknown) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ status: 'error', error: String(e) }))
+      }
+    } else if (req.url === '/detach-agent-view') {
+      detachBrowserView()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ status: 'ok' }))
     } else {
       res.writeHead(404)
       res.end()
