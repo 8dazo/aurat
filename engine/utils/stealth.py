@@ -101,22 +101,18 @@ async def connect_to_electron(cdp_url: str):
     pw = await async_playwright().start()
     browser = await pw.chromium.connect_over_cdp(cdp_url)
 
-    context = (
-        browser.contexts[0]
-        if browser.contexts
-        else await browser.new_context(
-            viewport=VIEWPORTS[0],
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/136.0.0.0 Safari/537.36"
-            ),
-        )
+    context = await browser.new_context(
+        viewport=VIEWPORTS[0],
+        user_agent=(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/136.0.0.0 Safari/537.36"
+        ),
     )
 
     await context.add_init_script(STEALTH_SCRIPT)
 
-    page = context.pages[0] if context.pages else await context.new_page()
+    page = await context.new_page()
 
     return pw, browser, context, page
 
