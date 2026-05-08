@@ -74,11 +74,11 @@
       const dpr = getDpr();
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
-      if (w === 0 || h === 0) return;
+      if (w === 0 || h === 0) return false;
       canvas.width = Math.round(w * dpr);
       canvas.height = Math.round(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      maybeRestartScreencast();
+      return true;
     }
 
     function maybeRestartScreencast() {
@@ -86,6 +86,7 @@
       const dpr = getDpr();
       const newW = Math.round(canvas.clientWidth * dpr);
       const newH = Math.round(canvas.clientHeight * dpr);
+      if (newW === 0 || newH === 0) return;
       if (
         Math.abs(newW - currentScreencastWidth) > 10 ||
         Math.abs(newH - currentScreencastHeight) > 10
@@ -112,8 +113,14 @@
         connected = true;
         updateDot('connected');
         loadingEl.style.display = 'none';
-        resizeCanvas();
-        startScreencast();
+        if (!resizeCanvas()) {
+          requestAnimationFrame(() => {
+            resizeCanvas();
+            startScreencast();
+          });
+        } else {
+          startScreencast();
+        }
       };
 
       ws.onmessage = (event) => {
@@ -175,7 +182,14 @@
         if (gen !== frameGen) return;
         viewportWidth = img.width;
         viewportHeight = img.height;
+        if (canvas.clientWidth === 0 || canvas.clientHeight === 0) return;
         const dpr = getDpr();
+        const desiredW = Math.round(canvas.clientWidth * dpr);
+        const desiredH = Math.round(canvas.clientHeight * dpr);
+        if (canvas.width !== desiredW || canvas.height !== desiredH) {
+          canvas.width = desiredW;
+          canvas.height = desiredH;
+        }
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
