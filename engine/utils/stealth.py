@@ -29,7 +29,7 @@ async def create_stealth_browser(cdp_port: int | None = None):
             "--remote-allow-origins=*",
             "--disable-blink-features=AutomationControlled",
         ],
-        headless=True,
+        headless="new",
     )
     context = await browser.new_context(
         viewport=viewport,
