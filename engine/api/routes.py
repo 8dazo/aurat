@@ -14,7 +14,8 @@ from db.crud import (
 )
 from agents.greenhouse import GreenhouseAgent
 from utils.stealth import (
-    create_stealth_browser,
+    connect_to_electron,
+    get_electron_cdp_url,
     check_browser_installed,
     install_browser,
 )
@@ -23,6 +24,7 @@ import httpx
 import json
 import asyncio
 import logging
+import os
 
 from playwright.async_api import Page as PlaywrightPage
 
@@ -32,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 _active_agent: GreenhouseAgent | None = None
 _agent_task: asyncio.Task | None = None
-_cdp_port: int | None = None
 _active_page: PlaywrightPage | None = None
 
 
@@ -149,7 +150,7 @@ async def job_detail(url: str):
 
 @router.post("/apply")
 async def start_application(body: ApplicationStartRequest):
-    global _active_agent, _agent_task, _cdp_port, _active_page
+    global _active_agent, _agent_task, _active_page
     if not body.job_url or not body.profile:
         raise HTTPException(400, "job_url and profile required")
 
@@ -164,31 +165,45 @@ async def start_application(body: ApplicationStartRequest):
     job_company = body.job_company
 
     async def run_agent():
-        global _active_agent, _active_page, _cdp_port
-        logger.info("run_agent: creating stealth browser...")
+        global _active_agent, _active_page
+        logger.info("run_agent: connecting to Electron CDP...")
         try:
-            pw, browser, context, cdp_port = await create_stealth_browser()
+            cdp_url = await get_electron_cdp_url()
         except Exception as e:
-            logger.exception("run_agent: failed to create browser: %s", e)
+            logger.exception("run_agent: failed to get CDP URL from Electron: %s", e)
+            await manager.broadcast_log("browser", "error", f"electron_cdp_failed: {e}")
+            await manager.broadcast_status("Idle")
+            _active_agent = None
+            _agent_task = None
+            return
+
+        try:
+            pw, browser, context, page = await connect_to_electron(cdp_url)
+        except Exception as e:
+            logger.exception("run_agent: failed to connect to Electron: %s", e)
             await manager.broadcast_log(
-                "browser", "error", f"browser_launch_failed: {e}"
+                "browser", "error", f"browser_connect_failed: {e}"
             )
             await manager.broadcast_status("Idle")
             _active_agent = None
             _agent_task = None
             return
-        _cdp_port = cdp_port
-        page = await context.new_page()
+
         _active_page = page
         await page.goto("about:blank")
-        await manager.broadcast_log("browser", "started", f"cdp_port={cdp_port}")
+        await manager.broadcast_log("browser", "started", "page_url=about:blank")
         try:
             logger.info("run_agent: navigating to %s", job_url)
             await manager.broadcast_log(
-                " navigation", "running", f"Navigating to {job_url}"
+                "navigation", "running", f"Navigating to {job_url}"
             )
             await page.goto(job_url, wait_until="networkidle", timeout=30000)
             logger.info("run_agent: page loaded")
+
+            current_url = page.url
+            await manager.broadcast_log(
+                "browser", "navigated", f"page_url={current_url}"
+            )
             await manager.broadcast_log("navigation", "completed", "Page loaded")
             if _active_agent:
                 _active_agent.on_step = lambda step, status, detail="": (
@@ -235,9 +250,7 @@ async def start_application(body: ApplicationStartRequest):
             _active_agent = None
             _agent_task = None
             _active_page = None
-            _cdp_port = None
             try:
-                await browser.close()
                 await pw.stop()
             except Exception:
                 pass
@@ -275,13 +288,6 @@ async def submit_answer(body: ManualAnswerRequest):
         await _active_agent.answer_question(body.question, body.answer)
         await _active_agent.resume()
     return {"status": "answered"}
-
-
-@router.get("/cdp-info")
-async def get_cdp_info():
-    if _cdp_port is None:
-        return {"status": "no_browser"}
-    return {"status": "active", "cdp_port": _cdp_port}
 
 
 @router.get("/db/profile")

@@ -4,8 +4,8 @@
   "private": true,
   "main": "dist/main.js",
   "scripts": {
-    "dev": "tsc && cp browser-view.html dist/ && electron dist/main.js",
-    "build": "tsc && cp browser-view.html dist/"
+    "dev": "tsc && electron dist/main.js",
+    "build": "tsc"
   },
   "dependencies": {
     "dotenv": "^16.6.1"

@@ -1,7 +1,6 @@
-import random
 import socket
+import httpx
 from playwright.async_api import async_playwright
-from playwright_stealth import Stealth
 
 VIEWPORTS = [
     {"width": 1280, "height": 800},
@@ -11,37 +10,73 @@ VIEWPORTS = [
     {"width": 1920, "height": 1080},
 ]
 
+STEALTH_SCRIPT = """
+// Remove navigator.webdriver
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
 
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+// Mock chrome.runtime
+if (!window.chrome) {
+  window.chrome = { runtime: {} };
+}
+
+// Override permissions.query
+const originalQuery = window.navigator.permissions.query.bind(window.navigator.permissions);
+window.navigator.permissions.query = (parameters) => (
+  parameters.name === 'notifications'
+    ? Promise.resolve({ state: Notification.permission })
+    : originalQuery(parameters)
+);
+
+// Mock plugins
+Object.defineProperty(navigator, 'plugins', {
+  get: () => [1, 2, 3, 4, 5],
+});
+
+// Mock languages
+Object.defineProperty(navigator, 'languages', {
+  get: () => ['en-US', 'en'],
+});
+"""
 
 
-async def create_stealth_browser(cdp_port: int | None = None):
-    if cdp_port is None:
-        cdp_port = _find_free_port()
+async def get_electron_cdp_url(port: int = 18733) -> str:
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"http://127.0.0.1:{port}/cdp-info")
+        data = resp.json()
+        cdp_port = data["cdp_port"]
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"http://127.0.0.1:{cdp_port}/json")
+        targets = resp.json()
+        browser_target = next(
+            (t for t in targets if t.get("type") == "page"),
+            targets[0],
+        )
+        return browser_target["webSocketDebuggerUrl"]
+
+
+async def connect_to_electron(cdp_url: str):
     pw = await async_playwright().start()
-    viewport = random.choice(VIEWPORTS)
-    browser = await pw.chromium.launch(
-        args=[
-            f"--remote-debugging-port={cdp_port}",
-            "--remote-allow-origins=*",
-            "--disable-blink-features=AutomationControlled",
-        ],
-        headless=True,
+    browser = await pw.chromium.connect_over_cdp(cdp_url)
+
+    context = (
+        browser.contexts[0]
+        if browser.contexts
+        else await browser.new_context(
+            viewport=VIEWPORTS[0],
+            user_agent=(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/136.0.0.0 Safari/537.36"
+            ),
+        )
     )
-    context = await browser.new_context(
-        viewport=viewport,
-        user_agent=(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/136.0.0.0 Safari/537.36"
-        ),
-    )
-    stealth = Stealth()
-    await stealth.apply_stealth_async(context)
-    return pw, browser, context, cdp_port
+
+    await context.add_init_script(STEALTH_SCRIPT)
+
+    page = context.pages[0] if context.pages else await context.new_page()
+
+    return pw, browser, context, page
 
 
 async def check_browser_installed() -> str | None:

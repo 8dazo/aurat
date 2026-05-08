@@ -1,6 +1,8 @@
 import { app, BrowserWindow, WebContentsView, ipcMain } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import * as path from 'path'
+import * as net from 'net'
+import * as http from 'http'
 import dotenv from 'dotenv'
 import { registerIpcHandlers } from './ipc-handlers'
 
@@ -9,20 +11,29 @@ dotenv.config({ path: path.join(__dirname, '..', '..', '.env') })
 let mainWindow: BrowserWindow | null = null
 let pyProc: ChildProcess | null = null
 let browserView: WebContentsView | null = null
+let cdpPort: number | null = null
+let infoServer: http.Server | null = null
 
-function startPythonBackend() {
+function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer()
+    server.listen(0, '127.0.0.1', () => {
+      const port = (server.address() as net.AddressInfo).port
+      server.close(() => resolve(port))
+    })
+    server.on('error', reject)
+  })
+}
+
+function startPythonBackend(cdpPortNum: number) {
+  const env = { ...process.env, PYTHONUNBUFFERED: '1', ELECTRON_CDP_PORT: String(cdpPortNum) }
   if (app.isPackaged) {
     const exePath = path.join(process.resourcesPath, 'python-bin', 'aurat-engine', 'aurat-engine')
-    pyProc = spawn(exePath, [], {
-      env: { ...process.env, PYTHONUNBUFFERED: '1' },
-    })
+    pyProc = spawn(exePath, [], { env })
   } else {
     const uvicornPath = path.join(__dirname, '..', '..', 'engine', '.venv', 'bin', 'uvicorn')
     const engineDir = path.join(__dirname, '..', '..', 'engine')
-    pyProc = spawn(uvicornPath, ['main:app', '--port', '18732'], {
-      cwd: engineDir,
-      env: { ...process.env, PYTHONUNBUFFERED: '1' },
-    })
+    pyProc = spawn(uvicornPath, ['main:app', '--port', '18732'], { cwd: engineDir, env })
   }
 
   pyProc.stdout?.on('data', (data: Buffer) => {
@@ -45,6 +56,19 @@ async function waitForPython(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 500))
   }
   console.error('[python] backend did not become ready in time')
+}
+
+function startInfoServer() {
+  infoServer = http.createServer((req, res) => {
+    if (req.url === '/cdp-info') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ cdp_port: cdpPort }))
+    } else {
+      res.writeHead(404)
+      res.end()
+    }
+  })
+  infoServer.listen(18733, '127.0.0.1')
 }
 
 function createWindow() {
@@ -72,9 +96,6 @@ function createWindow() {
 
 function detachBrowserView() {
   if (!browserView) return
-  try {
-    browserView.webContents.executeJavaScript('window.__stopCDP()').catch(() => {})
-  } catch {}
   if (mainWindow) {
     try {
       mainWindow.contentView.removeChildView(browserView)
@@ -83,64 +104,55 @@ function detachBrowserView() {
   browserView = null
 }
 
-async function attachBrowserView(cdpPort: number): Promise<{ status: string; error?: string }> {
+async function attachBrowserView(url: string): Promise<{ status: string; error?: string }> {
   if (!mainWindow) {
     return { status: 'error', error: 'No main window' }
   }
 
   detachBrowserView()
 
-  let wsUrl: string | null = null
-  for (let attempt = 0; attempt < 15; attempt++) {
-    try {
-      const resp = await fetch(`http://127.0.0.1:${cdpPort}/json`)
-      const targets = await resp.json() as any[]
-      const pageTarget = targets.find((t: any) => t.type === 'page') || targets[0]
-      if (pageTarget?.webSocketDebuggerUrl) {
-        wsUrl = pageTarget.webSocketDebuggerUrl
-        break
-      }
-    } catch {}
-    await new Promise(resolve => setTimeout(resolve, 500))
-  }
-
-  if (!wsUrl) {
-    return { status: 'error', error: 'No CDP target found' }
-  }
-
   browserView = new WebContentsView({
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false,
     },
   })
 
   const bv = browserView
-  bv.webContents.loadFile(path.join(__dirname, 'browser-view.html'))
+  bv.webContents.loadURL(url)
+
+  mainWindow.contentView.addChildView(bv)
+  resizeBrowserView()
 
   return new Promise((resolve) => {
+    let settled = false
+
+    const onDone = (result: { status: string; error?: string }) => {
+      if (settled) return
+      settled = true
+      resolve(result)
+    }
+
     bv.webContents.on('did-finish-load', () => {
       if (browserView !== bv) {
-        resolve({ status: 'error', error: 'Browser view was replaced' })
+        onDone({ status: 'error', error: 'Browser view was replaced' })
         return
       }
-      const safeUrl = wsUrl!.replace(/'/g, "\\'")
-      bv.webContents.executeJavaScript(`window.__startCDP('${safeUrl}')`).then(() => {
-        resolve({ status: 'attached' })
-      }).catch((err: Error) => {
-        resolve({ status: 'error', error: err.message })
-      })
+      onDone({ status: 'attached' })
     })
 
-    bv.webContents.on('render-process-gone', (_event, details) => {
+    bv.webContents.on('render-process-gone', () => {
       if (browserView === bv) {
         detachBrowserView()
       }
+      onDone({ status: 'error', error: 'Render process gone' })
     })
 
-    mainWindow!.contentView.addChildView(bv)
-    resizeBrowserView()
+    setTimeout(() => {
+      if (!settled) {
+        onDone({ status: 'attached' })
+      }
+    }, 10000)
   })
 }
 
@@ -159,8 +171,13 @@ function resizeBrowserView() {
 app.whenReady().then(async () => {
   registerIpcHandlers()
 
-  ipcMain.handle('browser:attach', async (_event, cdpPort: number) => {
-    return await attachBrowserView(cdpPort)
+  cdpPort = await findFreePort()
+  app.commandLine.appendSwitch('remote-debugging-port', String(cdpPort))
+
+  ipcMain.handle('browser:getCdpPort', () => cdpPort)
+
+  ipcMain.handle('browser:attach', async (_event, url: string) => {
+    return await attachBrowserView(url)
   })
 
   ipcMain.handle('browser:detach', async () => {
@@ -168,7 +185,8 @@ app.whenReady().then(async () => {
     return { status: 'detached' }
   })
 
-  startPythonBackend()
+  startPythonBackend(cdpPort)
+  startInfoServer()
   await waitForPython()
   createWindow()
 
@@ -182,6 +200,10 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  if (infoServer) {
+    infoServer.close()
+    infoServer = null
+  }
   if (pyProc) {
     pyProc.kill()
     pyProc = null

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useAgentWs } from "@/lib/use-agent-ws"
 import { electronAPI } from "@/lib/electron-api"
 import { Badge } from "@/components/ui/badge"
@@ -11,9 +11,8 @@ type AgentStatus = "Idle" | "Running" | "Paused"
 export function BrowserPreview() {
   const [status, setStatus] = useState<AgentStatus>("Idle")
   const [pauseReason, setPauseReason] = useState<string | null>(null)
-  const [cdpPort, setCdpPort] = useState<number | null>(null)
+  const [pageUrl, setPageUrl] = useState<string | null>(null)
   const [attached, setAttached] = useState(false)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const handleStatus = useCallback((s: AgentStatus, reason: string | null) => {
     setStatus(s)
@@ -21,12 +20,9 @@ export function BrowserPreview() {
   }, [])
 
   const handleLog = useCallback((message: string) => {
-    const match = message.match(/cdp_port=(\d+)/)
+    const match = message.match(/page_url=(.+)/)
     if (match) {
-      const port = parseInt(match[1], 10)
-      if (!isNaN(port) && port > 0) {
-        setCdpPort(port)
-      }
+      setPageUrl(match[1])
     }
   }, [])
 
@@ -36,34 +32,20 @@ export function BrowserPreview() {
   })
 
   useEffect(() => {
-    if (status === "Running" && !cdpPort) {
-      pollRef.current = setInterval(async () => {
-        try {
-          const result = await electronAPI.python.request("/cdp-info") as { status: string; cdp_port?: number }
-          if (result.status === "active" && result.cdp_port) {
-            setCdpPort(result.cdp_port)
-          }
-        } catch {}
-      }, 2000)
-      return () => { if (pollRef.current) clearInterval(pollRef.current) }
-    }
-  }, [status, cdpPort])
-
-  useEffect(() => {
-    if (cdpPort && status !== "Idle" && !attached) {
-      electronAPI.browser.attach(cdpPort).then((result) => {
+    if (pageUrl && status !== "Idle" && !attached) {
+      electronAPI.browser.attachUrl(pageUrl).then((result) => {
         if (result?.status === 'attached') {
           setAttached(true)
         }
       }).catch(() => {})
     }
-  }, [cdpPort, status, attached])
+  }, [pageUrl, status, attached])
 
   useEffect(() => {
     if (status === "Idle" && attached) {
       electronAPI.browser.detach().then(() => {
         setAttached(false)
-        setCdpPort(null)
+        setPageUrl(null)
       }).catch(() => {})
     }
   }, [status, attached])
