@@ -1,9 +1,12 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import { electronAPI, onProfileChange } from "@/lib/electron-api"
+import type { MasterProfile } from "@/types"
 
 const navItems = [
   { label: "Dashboard", href: "/", icon: DashboardIcon },
@@ -65,6 +68,29 @@ function SettingsIcon() {
 
 export function Sidebar() {
   const pathname = usePathname()
+  const [profile, setProfile] = useState<MasterProfile | null>(null)
+
+  const loadProfile = () => {
+    electronAPI.db.getProfile().then((data) => {
+      if (data) setProfile(data as MasterProfile)
+      else setProfile(null)
+    }).catch(() => setProfile(null))
+  }
+
+  useEffect(() => {
+    loadProfile()
+  }, [pathname])
+
+  useEffect(() => {
+    return onProfileChange(loadProfile)
+  }, [])
+
+  const initials = profile
+    ? `${profile.personal_info.first_name?.[0] || ""}${profile.personal_info.last_name?.[0] || ""}`.toUpperCase() || "?"
+    : null
+  const displayName = profile
+    ? `${profile.personal_info.first_name} ${profile.personal_info.last_name}`.trim()
+    : null
 
   return (
     <aside className="w-[200px] border-r border-border flex flex-col shrink-0">
@@ -91,7 +117,25 @@ export function Sidebar() {
       </nav>
       <div className="p-3">
         <Separator className="mb-3" />
-        <div className="px-3 text-xs text-muted-foreground">v0.1.0</div>
+        {profile ? (
+          <Link href="/" className="flex items-center gap-3 px-2 py-2 rounded-md hover:bg-accent transition-colors">
+            <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shrink-0">
+              {initials}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">{displayName}</p>
+              <p className="text-xs text-muted-foreground truncate">{profile.personal_info.email || "Profile active"}</p>
+            </div>
+          </Link>
+        ) : (
+          <Link href="/" className="flex items-center gap-3 px-2 py-2 rounded-md hover:bg-accent transition-colors">
+            <div className="h-8 w-8 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-xs shrink-0">
+              ?
+            </div>
+            <p className="text-xs text-muted-foreground">No profile set up</p>
+          </Link>
+        )}
+        <div className="mt-3 text-xs text-muted-foreground px-2">v0.1.0</div>
       </div>
     </aside>
   )

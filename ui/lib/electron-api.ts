@@ -1,3 +1,17 @@
+const profileChangeListeners: (() => void)[] = []
+
+export function onProfileChange(fn: () => void) {
+  profileChangeListeners.push(fn)
+  return () => {
+    const i = profileChangeListeners.indexOf(fn)
+    if (i >= 0) profileChangeListeners.splice(i, 1)
+  }
+}
+
+export function notifyProfileChange() {
+  profileChangeListeners.forEach((fn) => fn())
+}
+
 export const electronAPI = {
   python: {
     request: async (endpoint: string, body?: unknown): Promise<unknown> => {
@@ -33,7 +47,9 @@ export const electronAPI = {
     },
     saveProfile: async (data: unknown) => {
       if (typeof window !== 'undefined' && window.electronAPI?.db?.saveProfile) {
-        return window.electronAPI.db.saveProfile(data)
+        const result = await window.electronAPI.db.saveProfile(data)
+        notifyProfileChange()
+        return result
       }
     },
     getHistory: async (): Promise<unknown[]> => {
