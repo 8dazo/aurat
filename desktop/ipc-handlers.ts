@@ -53,14 +53,6 @@ export function registerIpcHandlers() {
     return pythonRequest(endpoint, body, timeoutMs ?? 30000)
   })
 
-  ipcMain.on('python:input', async (_event, inputEvent: Record<string, unknown>) => {
-    try {
-      await pythonRequest('/send_input', inputEvent)
-    } catch (err) {
-      console.error('[python:input] Failed to forward input:', err)
-    }
-  })
-
   ipcMain.on('app:isPackaged', (event) => {
     event.returnValue = app.isPackaged
   })

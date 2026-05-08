@@ -20,22 +20,11 @@ export const electronAPI = {
       }
       throw new Error('Running in browser - Electron IPC not available')
     },
-    onScreencastFrame: (callback: (frame: string) => void): (() => void) => {
-      if (typeof window !== 'undefined' && window.electronAPI?.python?.onScreencastFrame) {
-        return window.electronAPI.python.onScreencastFrame(callback)
-      }
-      return () => {}
-    },
     onLog: (callback: (log: string) => void): (() => void) => {
       if (typeof window !== 'undefined' && window.electronAPI?.python?.onLog) {
         return window.electronAPI.python.onLog(callback)
       }
       return () => {}
-    },
-    sendInput: (event: unknown): void => {
-      if (typeof window !== 'undefined' && window.electronAPI?.python?.sendInput) {
-        window.electronAPI.python.sendInput(event)
-      }
     },
   },
   db: {

@@ -5,9 +5,7 @@ declare global {
     electronAPI?: {
       python: {
         request: (endpoint: string, body?: unknown, timeoutMs?: number) => Promise<unknown>
-        onScreencastFrame: (callback: (frame: string) => void) => () => void
         onLog: (callback: (log: string) => void) => () => void
-        sendInput: (event: unknown) => void
       }
       db: {
         getProfile: () => Promise<unknown>

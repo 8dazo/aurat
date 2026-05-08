@@ -1,8 +1,8 @@
 "use client"
 
-import { LivePreview } from "@/components/LivePreview"
 import { ControlPanel } from "@/components/ControlPanel"
 import { ManualIntervention } from "@/components/ManualIntervention"
+import { BrowserStatus } from "@/components/BrowserStatus"
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { useAgentWs } from "@/lib/use-agent-ws"
@@ -56,7 +56,7 @@ function ApplyPageInner() {
   return (
     <div data-fullscreen className="flex h-[calc(100vh-56px)]">
       <div className="flex-1">
-        <LivePreview />
+        <BrowserStatus />
       </div>
       <div className="w-[400px] border-l border-border">
         <ControlPanel

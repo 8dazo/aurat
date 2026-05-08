@@ -119,10 +119,10 @@ export function ControlPanel({ jobUrl = "", jobTitle = "", jobCompany = "", atsT
           Start
         </Button>
         <Button size="sm" variant="outline" onClick={handlePause} disabled={loading || status !== "Running"}>
-          Pause
+          Take Control
         </Button>
         <Button size="sm" variant="outline" onClick={handleResume} disabled={loading || status !== "Paused"}>
-          Resume
+          Give Control Back
         </Button>
       </div>
 
