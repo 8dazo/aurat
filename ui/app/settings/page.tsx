@@ -97,7 +97,7 @@ export default function SettingsPage() {
   async function installChromium() {
     setPwStatus("installing")
     try {
-      await electronAPI.python.request("/install-browser")
+      await electronAPI.python.request("/install-browser", {})
       await checkPlaywright()
     } catch {
       toast.error("Failed to install Chromium")
@@ -305,7 +305,7 @@ export default function SettingsPage() {
           <Separator />
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Theme</span>
-            <Badge variant="secondary">Dark (always on)</Badge>
+            <Badge variant="secondary">Light</Badge>
           </div>
         </CardContent>
       </Card>
