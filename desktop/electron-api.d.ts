@@ -1,9 +1,7 @@
 export interface ElectronAPI {
   python: {
-    request(endpoint: string, body?: unknown): Promise<unknown>
-    onScreencastFrame(callback: (frame: string) => void): () => void
+    request(endpoint: string, body?: unknown, timeoutMs?: number): Promise<unknown>
     onLog(callback: (log: string) => void): () => void
-    sendInput(event: unknown): void
   }
   db: {
     getProfile(): Promise<unknown>

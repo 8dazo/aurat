@@ -8,7 +8,6 @@ async function pythonRequest(endpoint: string, body?: unknown, timeoutMs = 30000
     const isGet = !endpoint.startsWith('/analyze') &&
                   !endpoint.startsWith('/apply') &&
                   !endpoint.startsWith('/extract') &&
-                  !endpoint.startsWith('/send_input') &&
                   !endpoint.startsWith('/install') &&
                   endpoint !== '/db/profile'
     let url: string
