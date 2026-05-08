@@ -20,8 +20,9 @@ interface Job {
   title: string
   company: string
   location: string
-  salary_summary: string
-  ats_type: string
+  salarySummary: string | null
+  atsType: string | null
+  postedAt?: string | null
 }
 
 interface AnalyzeResult {
@@ -92,7 +93,7 @@ export function JobAnalyzer({ job, profile, onBack }: JobAnalyzerProps) {
       url: job.url,
       title: job.title,
       company: job.company,
-      ats_type: job.ats_type || "greenhouse",
+      ats_type: job.atsType || "greenhouse",
     })
     if (job.location) params.set("location", job.location)
     router.push(`/apply?${params.toString()}`)
@@ -111,7 +112,12 @@ export function JobAnalyzer({ job, profile, onBack }: JobAnalyzerProps) {
         profile: profile,
         job_url: job.url,
       }) as AnalyzeResult
-      setResult(res)
+      setResult({
+        score: res.score ?? 0,
+        matching_skills: res.matching_skills ?? [],
+        missing_skills: res.missing_skills ?? [],
+        summary: res.summary ?? "",
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed")
     } finally {
@@ -131,12 +137,12 @@ export function JobAnalyzer({ job, profile, onBack }: JobAnalyzerProps) {
           <CardDescription>
             {job.company}
             {job.location ? ` &middot; ${job.location}` : ""}
-            {job.salary_summary ? ` &middot; ${job.salary_summary}` : ""}
+            {job.salarySummary ? ` &middot; ${job.salarySummary}` : ""}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {job.ats_type && (
-            <Badge variant="secondary">{job.ats_type}</Badge>
+          {job.atsType && (
+            <Badge variant="secondary">{job.atsType}</Badge>
           )}
         </CardContent>
       </Card>

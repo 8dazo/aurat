@@ -16,4 +16,7 @@ llm = LLMClient()
 
 async def analyze_jd(profile_text: str, jd_text: str) -> MatchResult:
     prompt = f"{MATCH_JD_PROMPT}\n\nCandidate Profile:\n{profile_text}\n\nJob Description:\n{jd_text}"
-    return await llm.extract_structured(prompt, MatchResult, "")
+    result = await llm.extract_structured(prompt, MatchResult, "")
+    result.matching_skills = result.matching_skills or []
+    result.missing_skills = result.missing_skills or []
+    return result
