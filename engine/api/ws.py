@@ -1,21 +1,41 @@
 import json
+import logging
 from fastapi import WebSocket
+
+logger = logging.getLogger(__name__)
 
 
 class ConnectionManager:
     def __init__(self):
         self.screencast_connections: list[WebSocket] = []
         self.log_connections: list[WebSocket] = []
+        self._frame_count = 0
 
     async def connect_screencast(self, websocket: WebSocket):
         await websocket.accept()
         self.screencast_connections.append(websocket)
+        logger.info(
+            "Screencast WS connected, total=%d", len(self.screencast_connections)
+        )
 
     async def disconnect_screencast(self, websocket: WebSocket):
         if websocket in self.screencast_connections:
             self.screencast_connections.remove(websocket)
+        logger.info(
+            "Screencast WS disconnected, total=%d", len(self.screencast_connections)
+        )
 
     async def broadcast_screencast(self, frame: str):
+        if not self.screencast_connections:
+            return
+        self._frame_count += 1
+        if self._frame_count <= 5:
+            logger.info(
+                "Broadcasting frame #%d to %d clients, frame_len=%d",
+                self._frame_count,
+                len(self.screencast_connections),
+                len(frame),
+            )
         msg = json.dumps({"type": "frame", "frame": frame})
         for ws in self.screencast_connections[:]:
             try:

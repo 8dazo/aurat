@@ -58,7 +58,7 @@ function createWindow() {
       nodeIntegration: false,
     },
     title: 'Aurat AI',
-    backgroundColor: '#111111',
+    backgroundColor: '#ffffff',
   })
 
   if (app.isPackaged) {

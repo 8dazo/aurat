@@ -19,7 +19,7 @@ For each field, return:
 If a field cannot be mapped (custom question), set profile_key to null, confidence to 0, and value to null.
 
 Output valid JSON array matching this schema:
-[{"label": str, "field_type": str, "profile_key": str|null, "confidence": int, "value": str|null}]
+[{{"label": str, "field_type": str, "profile_key": str|null, "confidence": int, "value": str|null}}]
 
 Form fields:
 {fields}
@@ -34,21 +34,11 @@ class GreenhouseAgent(BaseAgent):
 
     async def detect_form_fields(self, page: Page) -> list[dict]:
         fields = []
-        input_elements = await page.query_selector_all(
-            'input[type!="hidden"], select, textarea'
-        )
-        for el in input_elements[:50]:
-            label_text = ""
-            label_el = await page.query_selector(
-                f'label[for="{await el.get_attribute("id") or ""}"]'
-            )
-            if label_el:
-                label_text = (await label_el.text_content() or "").strip()
-            if not label_text:
-                placeholder = await el.get_attribute("placeholder") or ""
-                name = await el.get_attribute("name") or ""
-                label_text = placeholder or name
+        all_inputs = await page.query_selector_all("input, select, textarea")
+        for el in all_inputs[:50]:
             input_type = await el.get_attribute("type") or "text"
+            if input_type == "hidden":
+                continue
             tag = await el.evaluate("el => el.tagName.toLowerCase()")
             field_type = {"select": "select", "textarea": "textarea"}.get(
                 tag, input_type

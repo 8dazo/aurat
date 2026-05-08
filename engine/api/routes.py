@@ -23,8 +23,11 @@ from utils.screencast import ScreencastStreamer
 import httpx
 import json
 import asyncio
+import logging
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 _active_agent: GreenhouseAgent | None = None
 _agent_task: asyncio.Task | None = None
@@ -159,13 +162,20 @@ async def start_application(body: ApplicationStartRequest):
 
     async def run_agent():
         global _active_agent, _active_streamer
+        logger.info("run_agent: creating stealth browser...")
         pw, browser, context = await create_stealth_browser()
         _active_streamer = ScreencastStreamer()
         try:
             page = await context.new_page()
+            logger.info("run_agent: navigating to %s", job_url)
             await page.goto(job_url, wait_until="networkidle", timeout=30000)
+            logger.info("run_agent: page loaded, starting screencast...")
             await _active_streamer.start(
                 page, lambda frame: manager.broadcast_screencast(frame)
+            )
+            logger.info(
+                "run_agent: screencast started, screencast_connections=%d",
+                len(manager.screencast_connections),
             )
             if _active_agent:
                 _active_agent.on_step = lambda step, status, detail="": (
