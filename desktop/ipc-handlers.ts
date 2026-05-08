@@ -9,7 +9,11 @@ async function pythonRequest(endpoint: string, body?: unknown, timeoutMs = 30000
                   !endpoint.startsWith('/apply') &&
                   !endpoint.startsWith('/extract') &&
                   !endpoint.startsWith('/install') &&
-                  endpoint !== '/db/profile'
+                  !endpoint.startsWith('/pause') &&
+                  !endpoint.startsWith('/resume') &&
+                  !endpoint.startsWith('/answer') &&
+                  endpoint !== '/db/profile' &&
+                  endpoint !== '/db/history'
     let url: string
     let payload: string | null = null
     const options: http.RequestOptions = {
