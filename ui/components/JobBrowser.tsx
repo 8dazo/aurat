@@ -30,9 +30,9 @@ interface Job {
   title: string
   company: string
   location: string
-  salary_summary: string
-  ats_type: string
-  posted_at: string
+  salarySummary: string | null
+  atsType: string | null
+  postedAt: string | null
 }
 
 interface JobsResponse {
@@ -96,16 +96,16 @@ export function JobBrowser() {
     setLoading(true)
     setError(null)
     try {
-      const params: Record<string, unknown> = { page, pageSize: 50 }
+      const params: Record<string, string> = { page: String(page), pageSize: "50" }
       if (search) params.search = search
       if (atsType !== "all") params.atsType = atsType
       if (location !== "all") params.location = location
       if (postedWithin !== "all") params.postedWithin = postedWithin
 
       const result = await electronAPI.python.request("/jobs", params) as JobsResponse
-      setJobs(result.jobs)
-      setTotal(result.total)
-      setTotalPages(result.totalPages)
+      setJobs(result.jobs ?? [])
+      setTotal(result.total ?? 0)
+      setTotalPages(result.totalPages ?? 0)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch jobs")
       setJobs([])
@@ -133,7 +133,8 @@ export function JobBrowser() {
     setSelectedJob(job)
   }
 
-  const formatDate = (dateStr: string) => {
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return "—"
     try {
       return new Date(dateStr).toLocaleDateString("en-US", {
         month: "short",
@@ -159,7 +160,7 @@ export function JobBrowser() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {total.toLocaleString()} jobs found
+          {(total ?? 0).toLocaleString()} jobs found
         </p>
       </div>
 
@@ -265,15 +266,15 @@ export function JobBrowser() {
                   <TableCell className="max-w-[150px] truncate">
                     {job.location}
                   </TableCell>
-                  <TableCell>{job.salary_summary || "—"}</TableCell>
+                  <TableCell>{job.salarySummary || "—"}</TableCell>
                   <TableCell>
-                    {job.ats_type ? (
-                      <Badge variant="secondary">{job.ats_type}</Badge>
+                    {job.atsType ? (
+                      <Badge variant="secondary">{job.atsType}</Badge>
                     ) : (
                       "—"
                     )}
                   </TableCell>
-                  <TableCell>{formatDate(job.posted_at)}</TableCell>
+                  <TableCell>{formatDate(job.postedAt)}</TableCell>
                   <TableCell>
                     <Button
                       variant="outline"

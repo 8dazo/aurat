@@ -19,7 +19,6 @@ from utils.stealth import (
     install_browser,
 )
 from api.ws import manager
-from utils.screencast import ScreencastStreamer
 import httpx
 import json
 import asyncio
@@ -31,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 _active_agent: GreenhouseAgent | None = None
 _agent_task: asyncio.Task | None = None
-_active_streamer: ScreencastStreamer | None = None
 
 
 @router.get("/health")
@@ -147,7 +145,7 @@ async def job_detail(url: str):
 
 @router.post("/apply")
 async def start_application(body: ApplicationStartRequest):
-    global _active_agent, _agent_task, _active_streamer
+    global _active_agent, _agent_task
     if not body.job_url or not body.profile:
         raise HTTPException(400, "job_url and profile required")
 
@@ -161,22 +159,14 @@ async def start_application(body: ApplicationStartRequest):
     job_company = body.job_company
 
     async def run_agent():
-        global _active_agent, _active_streamer
+        global _active_agent
         logger.info("run_agent: creating stealth browser...")
         pw, browser, context = await create_stealth_browser()
-        _active_streamer = ScreencastStreamer()
         try:
             page = await context.new_page()
             logger.info("run_agent: navigating to %s", job_url)
             await page.goto(job_url, wait_until="networkidle", timeout=30000)
-            logger.info("run_agent: page loaded, starting screencast...")
-            await _active_streamer.start(
-                page, lambda frame: manager.broadcast_screencast(frame)
-            )
-            logger.info(
-                "run_agent: screencast started, screencast_connections=%d",
-                len(manager.screencast_connections),
-            )
+            logger.info("run_agent: page loaded")
             if _active_agent:
                 _active_agent.on_step = lambda step, status, detail="": (
                     asyncio.ensure_future(manager.broadcast_log(step, status, detail))
@@ -215,13 +205,8 @@ async def start_application(body: ApplicationStartRequest):
                 }
             )
             await manager.broadcast_status("Idle")
-            import logging
-
             logging.exception("Agent run failed: %s", e)
         finally:
-            if _active_streamer:
-                await _active_streamer.stop()
-            _active_streamer = None
             _active_agent = None
             _agent_task = None
             await browser.close()
@@ -262,23 +247,6 @@ async def submit_answer(body: ManualAnswerRequest):
     return {"status": "answered"}
 
 
-@router.post("/send_input")
-async def send_input(body: dict):
-    if not _active_streamer:
-        raise HTTPException(404, "No active browser session")
-    event_type = body.get("type", "")
-    if event_type.startswith("mouse"):
-        await _active_streamer.dispatch_mouse(
-            event_type,
-            int(body.get("x", 0)),
-            int(body.get("y", 0)),
-            button=str(body.get("button", "left")),
-        )
-    elif event_type.startswith("key"):
-        await _active_streamer.dispatch_key_event(body)
-    return {"status": "ok"}
-
-
 @router.get("/db/profile")
 async def db_get_profile_route():
     return await db_get_profile()
@@ -314,16 +282,6 @@ async def db_save_qna_route(body: dict):
         body.get("answer", ""),
         body.get("appId", 0),
     )
-
-
-@router.websocket("/ws/screencast")
-async def screencast_ws(websocket: WebSocket):
-    await manager.connect_screencast(websocket)
-    try:
-        while True:
-            data = await websocket.receive_text()
-    except WebSocketDisconnect:
-        await manager.disconnect_screencast(websocket)
 
 
 @router.websocket("/ws/logs")

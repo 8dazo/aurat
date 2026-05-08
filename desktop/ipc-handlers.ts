@@ -5,13 +5,34 @@ const PYTHON_PORT = 18732
 
 async function pythonRequest(endpoint: string, body?: unknown, timeoutMs = 30000): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const url = `http://localhost:${PYTHON_PORT}${endpoint}`
-    const payload = body ? JSON.stringify(body) : null
+    const isGet = !endpoint.startsWith('/analyze') &&
+                  !endpoint.startsWith('/apply') &&
+                  !endpoint.startsWith('/extract') &&
+                  !endpoint.startsWith('/send_input') &&
+                  !endpoint.startsWith('/install') &&
+                  endpoint !== '/db/profile'
+    let url: string
+    let payload: string | null = null
     const options: http.RequestOptions = {
-      method: payload ? 'POST' : 'GET',
+      method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       timeout: timeoutMs,
     }
+
+    if (isGet && body && typeof body === 'object') {
+      const params = new URLSearchParams()
+      for (const [k, v] of Object.entries(body as Record<string, string>)) {
+        if (v !== undefined && v !== null) params.set(k, v)
+      }
+      url = `http://localhost:${PYTHON_PORT}${endpoint}?${params.toString()}`
+    } else if (body) {
+      url = `http://localhost:${PYTHON_PORT}${endpoint}`
+      payload = JSON.stringify(body)
+      options.method = 'POST'
+    } else {
+      url = `http://localhost:${PYTHON_PORT}${endpoint}`
+    }
+
     const req = http.request(url, options, (res) => {
       let data = ''
       res.on('data', (chunk: Buffer) => (data += chunk))
@@ -28,8 +49,8 @@ async function pythonRequest(endpoint: string, body?: unknown, timeoutMs = 30000
 }
 
 export function registerIpcHandlers() {
-  ipcMain.handle('python:request', async (_event, { endpoint, body }) => {
-    return pythonRequest(endpoint, body)
+  ipcMain.handle('python:request', async (_event, { endpoint, body, timeoutMs }) => {
+    return pythonRequest(endpoint, body, timeoutMs ?? 30000)
   })
 
   ipcMain.on('python:input', async (_event, inputEvent: Record<string, unknown>) => {

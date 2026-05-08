@@ -41,7 +41,9 @@ export function ResumeDropzone({ onProfileExtracted }: ResumeDropzoneProps) {
           filename: file.name,
           data: base64,
         })
-        onProfileExtracted(result as MasterProfile)
+        const profile = result as MasterProfile
+        await electronAPI.db.saveProfile(profile)
+        onProfileExtracted(profile)
         toast.success("Resume extracted successfully")
       } catch (err) {
         toast.error(

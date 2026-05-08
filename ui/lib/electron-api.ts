@@ -14,9 +14,9 @@ export function notifyProfileChange() {
 
 export const electronAPI = {
   python: {
-    request: async (endpoint: string, body?: unknown): Promise<unknown> => {
+    request: async (endpoint: string, body?: unknown, timeoutMs?: number): Promise<unknown> => {
       if (typeof window !== 'undefined' && window.electronAPI?.python?.request) {
-        return window.electronAPI.python.request(endpoint, body)
+        return window.electronAPI.python.request(endpoint, body, timeoutMs)
       }
       throw new Error('Running in browser - Electron IPC not available')
     },

@@ -18,9 +18,10 @@ import type { MasterProfile } from "@/types"
 
 interface ProfileEditorProps {
   profile: MasterProfile
+  onProfileChange?: (profile: MasterProfile) => void
 }
 
-export function ProfileEditor({ profile }: ProfileEditorProps) {
+export function ProfileEditor({ profile, onProfileChange }: ProfileEditorProps) {
   const [edited, setEdited] = useState<MasterProfile>(profile)
   const [saving, setSaving] = useState(false)
 
@@ -49,6 +50,7 @@ export function ProfileEditor({ profile }: ProfileEditorProps) {
     setSaving(true)
     try {
       await electronAPI.db.saveProfile(edited)
+      onProfileChange?.(edited)
       toast.success("Profile saved")
     } catch (err) {
       toast.error(

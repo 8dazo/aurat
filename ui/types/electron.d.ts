@@ -4,7 +4,7 @@ declare global {
   interface Window {
     electronAPI?: {
       python: {
-        request: (endpoint: string, body?: unknown) => Promise<unknown>
+        request: (endpoint: string, body?: unknown, timeoutMs?: number) => Promise<unknown>
         onScreencastFrame: (callback: (frame: string) => void) => () => void
         onLog: (callback: (log: string) => void) => () => void
         sendInput: (event: unknown) => void

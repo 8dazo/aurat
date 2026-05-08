@@ -2,8 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   python: {
-    request: (endpoint: string, body?: unknown) =>
-      ipcRenderer.invoke('python:request', { endpoint, body }),
+    request: (endpoint: string, body?: unknown, timeoutMs?: number) =>
+      ipcRenderer.invoke('python:request', { endpoint, body, timeoutMs }),
     onScreencastFrame: (callback: (frame: string) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, frame: string) => callback(frame)
       ipcRenderer.on('python:screencast-frame', handler)

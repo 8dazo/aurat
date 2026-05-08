@@ -97,7 +97,7 @@ export default function SettingsPage() {
   async function installChromium() {
     setPwStatus("installing")
     try {
-      await electronAPI.python.request("/install-browser", {})
+      await electronAPI.python.request("/install-browser", {}, 300000)
       await checkPlaywright()
     } catch {
       toast.error("Failed to install Chromium")
