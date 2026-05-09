@@ -14,7 +14,7 @@ export default function Home() {
   const loadProfile = async () => {
     try {
       const data = await electronAPI.db.getProfile()
-      if (data) setProfile(data as MasterProfile)
+      if (data && typeof data === 'object' && (data as MasterProfile).personal_info) setProfile(data as MasterProfile)
       else setProfile(null)
     } catch {
       setProfile(null)

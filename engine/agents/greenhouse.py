@@ -1,9 +1,24 @@
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import logging
+import os
+
 from agents.base import BaseAgent
 from playwright.async_api import Page
 from utils.human_input import human_type, human_click, human_delay
 from llm.client import LLMClient
-import json
-import asyncio
+
+logger = logging.getLogger(__name__)
+
+CUSTOM_PICKER_OPTION_SELECTORS = [
+    '[class*="select__option"]',
+    '[class*="choices__item--selectable"]',
+    '.select2-results__option',
+    '[role="option"]',
+]
 
 llm = LLMClient()
 
@@ -85,48 +100,122 @@ class GreenhouseAgent(BaseAgent):
         result = await llm.extract_structured(prompt, FieldMappingList, "")
         return [m.model_dump() for m in result.mappings]
 
+    def _qna_lookup(self, question: str) -> str | None:
+        mem = self.profile.get("custom_qna_memory", {})
+        if not mem:
+            return None
+        q_lower = question.lower().strip()
+        if q_lower in mem:
+            return mem[q_lower]
+        q_hash = hashlib.sha256(q_lower.encode()).hexdigest()[:16]
+        if q_hash in mem:
+            return mem[q_hash]
+        for key, answer in mem.items():
+            if key in q_lower or q_lower in key:
+                return answer
+        return None
+
     async def fill_field(self, page: Page, field: dict, value: str):
         el = field.get("element")
         if not el:
             return
         field_type = field.get("type", "text")
+
+        # File upload — use resume_path from profile
+        if value == "__RESUME_FILE__" or field_type == "file":
+            path = self.resume_path or value
+            if not path or not os.path.exists(path):
+                logger.warning("File upload skipped: path not found: %s", path)
+                return
+            try:
+                async with page.expect_file_chooser(timeout=5000) as fc_info:
+                    await el.click()
+                fc = await fc_info.value
+                await fc.set_files(path)
+            except Exception as exc:
+                logger.warning("File upload error: %s", exc)
+            return
+
         if field_type == "select":
             options = await el.query_selector_all("option")
+            v_lower = value.lower()
+            best = (-1, None)
             for opt in options:
-                opt_text = (await opt.text_content() or "").strip().lower()
-                if value.lower() in opt_text or opt_text in value.lower():
-                    await opt.click()
-                    return
-            if options:
-                await options[-1].click()
-        elif field_type == "checkbox":
-            is_checked = await el.is_checked()
-            if str(value).lower() in ("true", "yes", "1"):
-                if not is_checked:
-                    await el.click()
-        elif field_type == "file":
-            import os
+                txt = (await opt.text_content() or "").strip().lower()
+                score = 0
+                if txt == v_lower:
+                    score = 100
+                elif v_lower in txt or txt in v_lower:
+                    score = 60
+                if score > best[0]:
+                    best = (score, opt)
+            if best[1]:
+                await best[1].click()
+            return
 
-            resolved = (
-                value if os.path.isabs(value) else os.path.join(os.getcwd(), value)
-            )
-            async with page.expect_file_chooser(timeout=5000) as fc_info:
+        if field_type == "custom_select":
+            try:
                 await el.click()
-            file_chooser = await fc_info.value
-            if os.path.exists(resolved):
-                await file_chooser.set_files(resolved)
-        else:
-            selector = await el.evaluate("el => el.id || el.name || ''")
-            if selector:
-                has_id = await el.evaluate("el => !!el.id")
-                await human_type(
-                    page,
-                    f"#{selector}" if has_id else f"[name='{selector}']",
-                    value,
+                await page.wait_for_timeout(400)
+                for opt_sel in CUSTOM_PICKER_OPTION_SELECTORS:
+                    opts = await page.query_selector_all(opt_sel)
+                    visible = [(await o.text_content() or "").strip(), o]
+                    visible = [(t, o) for t, o in visible if t and await o.is_visible()]
+                    if visible:
+                        v_lower = value.lower()
+                        best_o, best_s = None, -1
+                        for txt, o in visible:
+                            t = txt.lower()
+                            s = 100 if t == v_lower else (60 if v_lower in t or t in v_lower else 0)
+                            if s > best_s:
+                                best_s, best_o = s, o
+                        if best_o and best_s >= 0:
+                            await best_o.click()
+                            return
+                await page.keyboard.press("Escape")
+            except Exception as exc:
+                logger.warning("Custom select error: %s", exc)
+            return
+
+        if field_type == "radio":
+            name = field.get("name", "")
+            if name:
+                radios = await page.query_selector_all(
+                    f'input[type="radio"][name="{name}"]'
                 )
-            else:
+                v_lower = value.lower()
+                for radio in radios:
+                    rid = await radio.get_attribute("id") or ""
+                    rval = (await radio.get_attribute("value") or "").lower()
+                    rlabel = ""
+                    if rid:
+                        lbl = await page.query_selector(f'label[for="{rid}"]')
+                        if lbl:
+                            rlabel = (await lbl.text_content() or "").strip().lower()
+                    if v_lower in rval or v_lower in rlabel or rval in v_lower:
+                        await radio.click()
+                        return
+            return
+
+        if field_type == "checkbox":
+            is_checked = await el.is_checked()
+            should = str(value).lower() in ("true", "yes", "1")
+            if should != is_checked:
                 await el.click()
-                await page.keyboard.type(value, delay=100)
+            return
+
+        # text / textarea / email / tel / number
+        selector = await el.evaluate("el => el.id || el.name || ''")
+        if selector:
+            has_id = await el.evaluate("el => !!el.id")
+            await human_type(
+                page,
+                f"#{selector}" if has_id else f"[name='{selector}']",
+                value,
+            )
+        else:
+            await el.click()
+            await page.keyboard.type(value, delay=100)
 
     async def submit(self, page: Page):
         submit_btn = await page.query_selector(
@@ -165,25 +254,26 @@ class GreenhouseAgent(BaseAgent):
                 )
                 self.log_step(f"fill_{mapping['label']}", "completed")
             elif mapping.get("profile_key") is None:
-                self.log_step(
-                    f"custom_{mapping['label']}",
-                    "paused",
-                    "Manual intervention required",
-                )
-                await self.pause(f"Custom question: {mapping['label']}")
-                while self.paused:
-                    await asyncio.sleep(0.5)
-                answer = next(
-                    (
-                        q["answer"]
-                        for q in self.custom_questions
-                        if q["question"] == mapping["label"]
-                    ),
-                    None,
-                )
-                if answer and i < len(fields):
-                    await self.fill_field(page, fields[i], answer)
-                self.log_step(f"custom_{mapping['label']}", "completed")
+                label = mapping["label"]
+                # Check QnA memory before interrupting the user
+                cached = self._qna_lookup(label)
+                if cached:
+                    self.log_step(f"fill_{label}", "running", f"memory: {cached[:40]}")
+                    await human_delay()
+                    await self.fill_field(page, fields[i] if i < len(fields) else {}, cached)
+                    self.log_step(f"fill_{label}", "completed", "answered from memory")
+                else:
+                    self.log_step(f"custom_{label}", "paused", "Manual answer required")
+                    await self.pause(f"Custom question: {label}")
+                    while self.paused:
+                        await asyncio.sleep(0.5)
+                    answer = next(
+                        (q["answer"] for q in self.custom_questions if q["question"] == label),
+                        None,
+                    )
+                    if answer and i < len(fields):
+                        await self.fill_field(page, fields[i], answer)
+                    self.log_step(f"custom_{label}", "completed")
             else:
                 self.log_step(
                     f"skip_{mapping['label']}",

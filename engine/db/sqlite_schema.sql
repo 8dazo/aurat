@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS master_profile (
 CREATE TABLE IF NOT EXISTS application_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     job_url TEXT NOT NULL,
+    snapshot_url TEXT NOT NULL DEFAULT '',
     ats_platform TEXT NOT NULL DEFAULT '',
     job_title TEXT NOT NULL DEFAULT '',
     company TEXT NOT NULL DEFAULT '',
