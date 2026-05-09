@@ -32,23 +32,22 @@ export function BrowserPreview() {
   })
 
   useEffect(() => {
-    if (pageUrl && status !== "Idle" && !attached) {
+    if (pageUrl && !attached) {
       electronAPI.browser.attachUrl(pageUrl).then((result) => {
         if (result?.status === 'attached') {
           setAttached(true)
         }
       }).catch(() => {})
     }
-  }, [pageUrl, status, attached])
+  }, [pageUrl, attached])
 
   useEffect(() => {
-    if (status === "Idle" && attached) {
+    if (status === "Idle" && attached && !pageUrl) {
       electronAPI.browser.detach().then(() => {
         setAttached(false)
-        setPageUrl(null)
       }).catch(() => {})
     }
-  }, [status, attached])
+  }, [status, attached, pageUrl])
 
   return (
     <div className="flex flex-col h-full bg-muted/30">
@@ -59,7 +58,7 @@ export function BrowserPreview() {
       )}
 
       <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
-        {status === "Idle" && (
+        {status === "Idle" && !attached && (
           <div className="text-center space-y-3 max-w-md">
             <Monitor className="h-12 w-12 mx-auto text-muted-foreground" />
             <Badge variant="secondary" className="text-sm px-3 py-1">
@@ -68,6 +67,14 @@ export function BrowserPreview() {
             <p className="text-sm text-muted-foreground">
               Start an application to begin. The browser preview will appear here automatically.
             </p>
+          </div>
+        )}
+
+        {status === "Idle" && attached && (
+          <div className="w-full space-y-3">
+            <Badge variant="secondary" className="text-sm px-3 py-1">
+              Preview — page loaded
+            </Badge>
           </div>
         )}
 

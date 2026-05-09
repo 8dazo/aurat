@@ -11,6 +11,7 @@ let mainWindow: BrowserWindow | null = null
 let pyProc: ChildProcess | null = null
 let browserView: WebContentsView | null = null
 let infoServer: http.Server | null = null
+let agentViewOwnedByEngine = false
 
 function startPythonBackend(cdpPortNum: number) {
   const env = { ...process.env, PYTHONUNBUFFERED: '1', ELECTRON_CDP_PORT: String(cdpPortNum) }
@@ -53,18 +54,29 @@ function startInfoServer() {
     } else if (req.url === '/attach-agent-view') {
       // Called by Python backend before connecting via CDP.
       // Creates the WebContentsView so it appears as a page target in CDP.
+      // If a view already exists and is engine-owned, reuse it.
       try {
-        await attachBrowserView('about:blank')
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ status: 'ok' }))
+        if (agentViewOwnedByEngine && browserView) {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ status: 'ok', reused: true }))
+        } else {
+          await attachBrowserView('about:blank')
+          agentViewOwnedByEngine = true
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ status: 'ok' }))
+        }
       } catch (e: unknown) {
         res.writeHead(500, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ status: 'error', error: String(e) }))
       }
     } else if (req.url === '/detach-agent-view') {
       detachBrowserView()
+      agentViewOwnedByEngine = false
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ status: 'ok' }))
+    } else if (req.url === '/view-status') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ attached: browserView !== null, engineOwned: agentViewOwnedByEngine }))
     } else {
       res.writeHead(404)
       res.end()
@@ -98,6 +110,7 @@ function createWindow() {
 
 function detachBrowserView() {
   if (!browserView) return
+  agentViewOwnedByEngine = false
   if (mainWindow) {
     try {
       mainWindow.contentView.removeChildView(browserView)
@@ -122,9 +135,25 @@ async function attachBrowserView(url: string): Promise<{ status: string; error?:
 
   const bv = browserView
   bv.webContents.loadURL(url)
+  
+  bv.webContents.setWindowOpenHandler(({ url }) => {
+    bv.webContents.loadURL(url)
+    return { action: 'deny' }
+  })
 
   mainWindow.contentView.addChildView(bv)
   resizeBrowserView()
+
+  const notifyCrash = () => {
+    const body = JSON.stringify({ event: 'view_crashed' })
+    const req = http.request(
+      { hostname: '127.0.0.1', port: 18732, path: '/event', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
+      () => {}
+    )
+    req.on('error', () => {})
+    req.write(body)
+    req.end()
+  }
 
   return new Promise((resolve) => {
     let settled = false
@@ -143,9 +172,13 @@ async function attachBrowserView(url: string): Promise<{ status: string; error?:
       onDone({ status: 'attached' })
     })
 
-    bv.webContents.on('render-process-gone', () => {
+    bv.webContents.on('render-process-gone', (_event, details) => {
       if (browserView === bv) {
         detachBrowserView()
+      }
+      if (agentViewOwnedByEngine) {
+        console.error('[agent-view] Render process gone during agent run:', details?.reason)
+        notifyCrash()
       }
       onDone({ status: 'error', error: 'Render process gone' })
     })
@@ -182,6 +215,9 @@ app.whenReady().then(async () => {
   ipcMain.handle('browser:getCdpPort', () => cdpPort)
 
   ipcMain.handle('browser:attach', async (_event, url: string) => {
+    if (agentViewOwnedByEngine) {
+      return { status: 'attached' }
+    }
     return await attachBrowserView(url)
   })
 

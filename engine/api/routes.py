@@ -52,6 +52,7 @@ _RESUME_DIR = os.path.expanduser("~/.aurat")
 # Health
 # ---------------------------------------------------------------------------
 
+
 @router.get("/health")
 async def health():
     browser_info = await check_browser_installed()
@@ -67,6 +68,7 @@ async def install_chromium():
 # ---------------------------------------------------------------------------
 # Resume — extract + save PDF to disk
 # ---------------------------------------------------------------------------
+
 
 @router.post("/extract")
 async def extract_resume(file: UploadFile):
@@ -107,6 +109,38 @@ async def extract_resume_base64(body: dict):
         raise HTTPException(422, f"Extraction failed: {e}")
 
 
+@router.get("/resume/status")
+async def resume_status():
+    """Check if a saved resume file exists without requiring a new upload."""
+    save_path = os.path.join(_RESUME_DIR, "resume.pdf")
+    if os.path.exists(save_path):
+        size_kb = round(os.path.getsize(save_path) / 1024, 1)
+        return {
+            "saved": True,
+            "path": save_path,
+            "filename": "resume.pdf",
+            "size_kb": size_kb,
+        }
+    # Fallback: check path stored in DB profile
+    try:
+        profile = await db_get_profile()
+        if (
+            profile
+            and profile.get("resume_path")
+            and os.path.exists(profile["resume_path"])
+        ):
+            p = profile["resume_path"]
+            return {
+                "saved": True,
+                "path": p,
+                "filename": os.path.basename(p),
+                "size_kb": round(os.path.getsize(p) / 1024, 1),
+            }
+    except Exception:
+        pass
+    return {"saved": False, "path": None, "filename": None, "size_kb": 0}
+
+
 @router.post("/resume/save")
 async def save_resume_to_disk(body: dict):
     """
@@ -142,6 +176,7 @@ async def save_resume_to_disk(body: dict):
 # Job analysis
 # ---------------------------------------------------------------------------
 
+
 @router.post("/analyze")
 async def analyze_job(body: dict):
     profile = body.get("profile")
@@ -164,6 +199,7 @@ async def analyze_job(body: dict):
 # ---------------------------------------------------------------------------
 # Jobs
 # ---------------------------------------------------------------------------
+
 
 @router.get("/jobs")
 async def list_jobs(
@@ -209,6 +245,19 @@ async def job_detail(url: str):
 # Apply — detect (pre-flight, no agent started)
 # ---------------------------------------------------------------------------
 
+
+@router.post("/event")
+async def handle_event(body: dict):
+    event = body.get("event", "")
+    if event == "view_crashed" and _active_agent:
+        logger.warning("Received view_crashed event — pausing agent")
+        await _active_agent.pause(
+            "Browser view crashed — you can resume after reloading"
+        )
+        await manager.broadcast_status("Paused", "Browser view crashed")
+    return {"status": "ok", "event": event}
+
+
 @router.post("/apply/detect")
 async def detect_apply_page(body: dict):
     """
@@ -223,16 +272,55 @@ async def detect_apply_page(body: dict):
     try:
         cdp_url = await get_electron_cdp_url()
         pw, browser, context, page = await connect_to_electron(cdp_url)
-        await page.goto(job_url, wait_until="domcontentloaded", timeout=30000)
+
+        # ── Navigate with ERR_ABORTED / redirect handling ─────────────
+        # Sites like Stripe redirect mid-navigation, causing ERR_ABORTED
+        # on the original URL. We try "load" first, then progressively
+        # fall back to "commit" with longer delays.
+        try:
+            await page.goto(job_url, wait_until="load", timeout=45000)
+        except Exception as nav_err:
+            err_str = str(nav_err)
+            if "ERR_ABORTED" in err_str or "net::" in err_str:
+                # Give the redirect chain a moment to settle
+                await page.wait_for_timeout(3000)
+                if page.url and page.url not in ("about:blank", ""):
+                    logger.info("ERR_ABORTED but page landed at %s — waiting", page.url)
+                    try:
+                        await page.wait_for_load_state(
+                            "domcontentloaded", timeout=15000
+                        )
+                    except Exception:
+                        pass
+                else:
+                    # Retry with commit + longer settle
+                    try:
+                        await page.goto(job_url, wait_until="commit", timeout=30000)
+                        await page.wait_for_timeout(5000)
+                    except Exception:
+                        # Final attempt: just wait for whatever page we can get
+                        await page.wait_for_timeout(3000)
+                        if not page.url or page.url in ("about:blank", ""):
+                            raise nav_err
+            else:
+                raise
+
+        # If a redirect happened, wait for the new page to stabilise
+        if page.url != job_url and page.url not in ("about:blank", ""):
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=8000)
+            except Exception:
+                pass
+
+        # Broadcast page_url so BrowserPreview can attach during detection
+        if page.url and page.url not in ("about:blank", ""):
+            await manager.broadcast_log("browser", "navigated", f"page_url={page.url}")
+
         ctx = await analyze_page(page)
+        # Stop Playwright but keep the Electron WebContentsView alive
+        # so the user can see the preview while deciding to start.
         try:
             await pw.stop()
-        except Exception:
-            pass
-        # Also clean up agent view
-        try:
-            async with httpx.AsyncClient() as client:
-                await client.get("http://127.0.0.1:18733/detach-agent-view", timeout=5.0)
         except Exception:
             pass
         return {
@@ -250,6 +338,7 @@ async def detect_apply_page(body: dict):
 # Apply — start agent
 # ---------------------------------------------------------------------------
 
+
 @router.post("/apply")
 async def start_application(body: ApplicationStartRequest):
     global _active_agent, _agent_task, _active_page
@@ -260,6 +349,23 @@ async def start_application(body: ApplicationStartRequest):
         raise HTTPException(409, "An application is already running")
 
     profile_data = body.profile if isinstance(body.profile, dict) else {}
+
+    # ── Inject resume_path from DB if not in request profile ──────────
+    if not profile_data.get("resume_path"):
+        saved_resume = os.path.join(_RESUME_DIR, "resume.pdf")
+        if os.path.exists(saved_resume):
+            profile_data["resume_path"] = saved_resume
+        else:
+            try:
+                db_profile = await db_get_profile()
+                if db_profile and db_profile.get("resume_path"):
+                    profile_data["resume_path"] = db_profile["resume_path"]
+            except Exception:
+                pass
+
+    # ── Inject job context for memory enrichment ───────────────────────
+    profile_data["_current_job_url"] = body.job_url or ""
+    profile_data["_current_company"] = body.job_company or ""
 
     # Use AutoApplyAgent for all platforms (falls back internally to greenhouse signals)
     _active_agent = AutoApplyAgent(profile_data)
@@ -288,7 +394,9 @@ async def start_application(body: ApplicationStartRequest):
             pw, browser, context, page = await connect_to_electron(cdp_url)
         except Exception as e:
             logger.exception("run_agent: Electron connect failed: %s", e)
-            await manager.broadcast_log("browser", "error", f"browser_connect_failed: {e}")
+            await manager.broadcast_log(
+                "browser", "error", f"browser_connect_failed: {e}"
+            )
             await manager.broadcast_status("Idle")
             _active_agent = None
             _agent_task = None
@@ -310,17 +418,51 @@ async def start_application(body: ApplicationStartRequest):
                 "custom_questions": [],
             }
         )
-        history_id = history_entry.get("id") if isinstance(history_entry, dict) else None
+        history_id = (
+            history_entry.get("id") if isinstance(history_entry, dict) else None
+        )
 
         try:
             await page.goto("about:blank")
             await manager.broadcast_log("browser", "started", "page_url=about:blank")
             logger.info("run_agent: navigating to %s", job_url)
-            await manager.broadcast_log("navigation", "running", f"Navigating to {job_url}")
-            await page.goto(job_url, wait_until="networkidle", timeout=30000)
+            await manager.broadcast_log(
+                "navigation", "running", f"Navigating to {job_url}"
+            )
+            try:
+                await page.goto(job_url, wait_until="networkidle", timeout=30000)
+            except Exception as nav_err:
+                err_str = str(nav_err)
+                if "ERR_ABORTED" in err_str or "net::" in err_str:
+                    await page.wait_for_timeout(3000)
+                    if page.url and page.url not in ("about:blank", ""):
+                        logger.info(
+                            "ERR_ABORTED but page landed at %s — waiting", page.url
+                        )
+                        await manager.broadcast_log(
+                            "browser", "navigated", f"page_url={page.url}"
+                        )
+                        try:
+                            await page.wait_for_load_state(
+                                "domcontentloaded", timeout=15000
+                            )
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            await page.goto(job_url, wait_until="commit", timeout=30000)
+                            await page.wait_for_timeout(5000)
+                        except Exception:
+                            await page.wait_for_timeout(3000)
+                            if not page.url or page.url in ("about:blank", ""):
+                                raise nav_err
+                else:
+                    raise
             logger.info("run_agent: page loaded")
             current_url = page.url
-            await manager.broadcast_log("browser", "navigated", f"page_url={current_url}")
+            await manager.broadcast_log(
+                "browser", "navigated", f"page_url={current_url}"
+            )
             await manager.broadcast_log("navigation", "completed", "Page loaded")
 
             if _active_agent:
@@ -379,6 +521,7 @@ async def start_application(body: ApplicationStartRequest):
 # Agent control
 # ---------------------------------------------------------------------------
 
+
 @router.post("/pause")
 async def pause_application():
     if not _active_agent:
@@ -408,6 +551,7 @@ async def submit_answer(body: ManualAnswerRequest):
 # ---------------------------------------------------------------------------
 # DB routes
 # ---------------------------------------------------------------------------
+
 
 @router.get("/db/profile")
 async def db_get_profile_route():
@@ -455,8 +599,94 @@ async def db_save_qna_route(body: dict):
 
 
 # ---------------------------------------------------------------------------
+# Memory API
+# ---------------------------------------------------------------------------
+
+
+@router.get("/memory/status")
+async def memory_status():
+    """Return document counts per memory collection."""
+    try:
+        from memory.collections import MemoryCollections
+
+        mem = MemoryCollections()
+        return await mem.status()
+    except Exception as e:
+        raise HTTPException(500, f"Memory status failed: {e}")
+
+
+@router.get("/memory/search")
+async def memory_search(q: str, collection: str = "qna_memory", top_k: int = 5):
+    """Hybrid BM25+vector search over a memory collection."""
+    if not q:
+        raise HTTPException(400, "q required")
+    try:
+        from memory.collections import MemoryCollections
+
+        mem = MemoryCollections()
+        results = await mem._store.search(collection, q, top_k=top_k, rerank=False)
+        return [
+            {
+                "doc_id": r.doc_id,
+                "content": r.content[:300],
+                "metadata": r.metadata,
+                "score": r.score,
+            }
+            for r in results
+        ]
+    except Exception as e:
+        raise HTTPException(500, f"Memory search failed: {e}")
+
+
+@router.get("/memory/facts")
+async def memory_facts(min_confidence: int = 50):
+    """Return extracted profile facts with confidence scores."""
+    try:
+        from memory.collections import MemoryCollections
+
+        mem = MemoryCollections()
+        return await mem.get_all_facts(min_confidence=min_confidence)
+    except Exception as e:
+        raise HTTPException(500, f"Memory facts failed: {e}")
+
+
+@router.post("/memory/enrich")
+async def memory_enrich():
+    """Manually trigger profile enrichment from high-confidence facts."""
+    try:
+        from memory.profile_builder import ProfileBuilder
+
+        profile = await db_get_profile()
+        if not profile:
+            raise HTTPException(404, "No profile found")
+        builder = ProfileBuilder()
+        enriched = await builder.enrich_profile(profile)
+        await db_save_profile(enriched)
+        return {"status": "enriched", "profile": enriched}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Enrichment failed: {e}")
+
+
+@router.get("/memory/gaps")
+async def memory_gaps(job_context: str = ""):
+    """Find profile gaps and return questions to ask the user."""
+    try:
+        from memory.profile_builder import ProfileBuilder
+
+        profile = await db_get_profile() or {}
+        builder = ProfileBuilder()
+        gaps = await builder.find_gaps_and_questions(profile, job_context=job_context)
+        return {"gaps": gaps}
+    except Exception as e:
+        raise HTTPException(500, f"Gap analysis failed: {e}")
+
+
+# ---------------------------------------------------------------------------
 # WebSocket
 # ---------------------------------------------------------------------------
+
 
 @router.websocket("/ws/logs")
 async def logs_ws(websocket: WebSocket):

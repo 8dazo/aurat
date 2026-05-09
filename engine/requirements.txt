@@ -9,3 +9,7 @@ playwright==1.52.0
 playwright-stealth==2.0.3
 aiosqlite==0.21.0
 httpx==0.28.0
+# QMD-inspired hybrid memory (BM25 + vector + RRF reranking)
+rank-bm25==0.2.2
+sentence-transformers==3.4.1
+numpy>=1.26.0

@@ -99,24 +99,28 @@ async def connect_to_electron(cdp_url: str, info_port: int = 18733):
     Electron's CDP protocol does NOT allow creating new contexts or pages
     (Target.createBrowserContext / Target.createTarget are both unsupported).
     Instead we:
-      1. Ask Electron (via its info server) to create a WebContentsView —
-         this makes it appear as a page target in the CDP session.
+      1. Ask Electron (via its info server) to attach a WebContentsView —
+         if one already exists from a prior detection, it is reused.
       2. Connect with Playwright and grab the existing default context.
       3. Find the agent page (the WebContentsView) by excluding the main UI.
     """
-    # Step 1 — ask Electron to attach a blank WebContentsView for the agent
+    # Step 1 — ask Electron to ensure a WebContentsView exists for the agent
     logger.info("connect_to_electron: requesting agent view from Electron info server")
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 f"http://127.0.0.1:{info_port}/attach-agent-view", timeout=15.0
             )
-            logger.info("attach-agent-view response: %s %s", resp.status_code, resp.text)
+            logger.info(
+                "attach-agent-view response: %s %s", resp.status_code, resp.text
+            )
     except Exception as e:
         raise RuntimeError(f"Failed to trigger agent view in Electron: {e}") from e
 
-    # Small pause so the new WebContentsView registers as a CDP target
-    await asyncio.sleep(0.8)
+    # Small pause so the WebContentsView registers as a CDP target
+    # (longer if reused, since page may be mid-navigation)
+    reused = "reused" in (resp.text or "")
+    await asyncio.sleep(0.3 if reused else 0.8)
 
     # Step 2 — connect to the browser
     pw = await async_playwright().start()
@@ -135,9 +139,7 @@ async def connect_to_electron(cdp_url: str, info_port: int = 18733):
     logger.info(
         "connect_to_electron: found %d page(s): %s", len(pages), [p.url for p in pages]
     )
-    agent_page = next(
-        (p for p in pages if "localhost:3000" not in (p.url or "")), None
-    )
+    agent_page = next((p for p in pages if "localhost:3000" not in (p.url or "")), None)
     if agent_page is None:
         raise RuntimeError(
             f"Could not find agent page in CDP context. "
