@@ -19,6 +19,10 @@ declare global {
         getPlatform: () => string
         isPackaged: () => boolean
       }
+      browser: {
+        attachUrl: (url: string) => Promise<{ status: string; error?: string }>
+        detach: () => Promise<{ status: string }>
+      }
     }
   }
 }

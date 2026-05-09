@@ -62,3 +62,26 @@ class LLMClient:
         else:
             json_str = raw
         return schema.model_validate_json(json_str.strip())
+
+    async def complete(self, prompt: str, max_tokens: int = 200) -> str:
+        """Plain text completion — used by the memory reranker."""
+        if await self._check_local():
+            try:
+                resp = await asyncio.to_thread(
+                    self.local.chat,
+                    model=LOCAL_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    options={"temperature": 0, "num_predict": max_tokens},
+                )
+                return resp.message.content or ""
+            except Exception:
+                self._local_available = False
+
+        resp = await asyncio.to_thread(
+            self.cloud.chat,
+            model=CLOUD_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            options={"num_predict": max_tokens},
+        )
+        return resp.message.content or ""
+

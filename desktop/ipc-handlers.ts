@@ -5,15 +5,15 @@ const PYTHON_PORT = 18732
 
 async function pythonRequest(endpoint: string, body?: unknown, timeoutMs = 30000): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const isGet = !endpoint.startsWith('/analyze') &&
-                  !endpoint.startsWith('/apply') &&
-                  !endpoint.startsWith('/extract') &&
-                  !endpoint.startsWith('/install') &&
-                  !endpoint.startsWith('/pause') &&
-                  !endpoint.startsWith('/resume') &&
-                  !endpoint.startsWith('/answer') &&
-                  endpoint !== '/db/profile' &&
-                  endpoint !== '/db/history'
+    const isPost = (endpoint.startsWith('/analyze') ||
+                  endpoint.startsWith('/apply') ||
+                  endpoint.startsWith('/extract') ||
+                  endpoint.startsWith('/install') ||
+                  endpoint.startsWith('/pause') ||
+                  endpoint.startsWith('/answer') ||
+                  endpoint === '/resume' ||
+                  endpoint.startsWith('/resume/save') ||
+                  (!!body && !endpoint.startsWith('/jobs')))
     let url: string
     let payload: string | null = null
     const options: http.RequestOptions = {
@@ -22,16 +22,16 @@ async function pythonRequest(endpoint: string, body?: unknown, timeoutMs = 30000
       timeout: timeoutMs,
     }
 
-    if (isGet && body && typeof body === 'object') {
+    if (isPost) {
+      url = `http://localhost:${PYTHON_PORT}${endpoint}`
+      options.method = 'POST'
+      if (body) payload = JSON.stringify(body)
+    } else if (body && typeof body === 'object') {
       const params = new URLSearchParams()
       for (const [k, v] of Object.entries(body as Record<string, string>)) {
         if (v !== undefined && v !== null) params.set(k, v)
       }
       url = `http://localhost:${PYTHON_PORT}${endpoint}?${params.toString()}`
-    } else if (body) {
-      url = `http://localhost:${PYTHON_PORT}${endpoint}`
-      payload = JSON.stringify(body)
-      options.method = 'POST'
     } else {
       url = `http://localhost:${PYTHON_PORT}${endpoint}`
     }
@@ -40,8 +40,12 @@ async function pythonRequest(endpoint: string, body?: unknown, timeoutMs = 30000
       let data = ''
       res.on('data', (chunk: Buffer) => (data += chunk))
       res.on('end', () => {
-        try { resolve(JSON.parse(data)) }
-        catch { resolve(data) }
+        if (res.statusCode && res.statusCode >= 400) {
+          reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`))
+        } else {
+          try { resolve(JSON.parse(data)) }
+          catch { resolve(data) }
+        }
       })
     })
     req.on('error', reject)

@@ -1,0 +1,316 @@
+# Fix Blurry & Non-Dynamic Browser Preview — Implementation Plan
+
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** Eliminate blur in the CDP screencast preview and make it dynamically adjust resolution based on the allotted panel area.
+
+**Architecture:** The browser preview renders CDP screencast frames on an HTML canvas inside an Electron WebContentsView. A secondary WebSocket (separate from Playwright's CDP session) receives JPEG frames and forwards mouse/keyboard events. The fix adds DPI-aware canvas sizing, a ResizeObserver for dynamic resolution, and improves the headless browser config.
+
+**Tech Stack:** Electron WebContentsView, Chrome DevTools Protocol (Page.startScreencast), HTML5 Canvas, Playwright (Python)
+
+---
+
+### Task 1: Add ResizeObserver + DPI-aware canvas to browser-view.html
+
+**Files:**
+- Modify: `desktop/browser-view.html`
+
+**Step 1: Add ResizeObserver and DPI-aware canvas sizing**
+
+Replace the existing `startScreencast` and `handleScreencastFrame` functions, and add a `ResizeObserver` + canvas sizing logic. Here's the complete replacement for the `<script>` section:
+
+```javascript
+const canvas = document.getElementById('viewport');
+const ctx = canvas.getContext('2d');
+const dotEl = document.getElementById('dot');
+const urlEl = document.getElementById('url');
+const loadingEl = document.getElementById('loading');
+
+let ws = null;
+let cdpWsUrl = null;
+let msgId = 1;
+let viewportWidth = 1280;
+let viewportHeight = 800;
+let connected = false;
+let screencastActive = false;
+let currentScreencastWidth = 0;
+let currentScreencastHeight = 0;
+let resizeTimer = null;
+
+function updateDot(state) {
+  dotEl.className = 'dot ' + state;
+}
+
+function getDpr() {
+  return window.devicePixelRatio || 1;
+}
+
+function resizeCanvas() {
+  const dpr = getDpr();
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  if (w === 0 || h === 0) return;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  maybeRestartScreencast();
+}
+
+function maybeRestartScreencast() {
+  if (!connected || !screencastActive) return;
+  const dpr = getDpr();
+  const newW = Math.round(canvas.clientWidth * dpr);
+  const newH = Math.round(canvas.clientHeight * dpr);
+  if (
+    Math.abs(newW - currentScreencastWidth) > 10 ||
+    Math.abs(newH - currentScreencastHeight) > 10
+  ) {
+    sendCDP('Page.stopScreencast');
+    startScreencast();
+  }
+}
+
+const ro = new ResizeObserver(() => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(resizeCanvas, 200);
+});
+ro.observe(canvas);
+
+function connectDirect(wsUrl) {
+  cdpWsUrl = wsUrl;
+  updateDot('connecting');
+
+  if (ws) { try { ws.close(); } catch(e) {} }
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    connected = true;
+    updateDot('connected');
+    loadingEl.style.display = 'none';
+    resizeCanvas();
+    startScreencast();
+  };
+
+  ws.onmessage = (event) => {
+    let data;
+    try {
+      if (typeof event.data !== 'string') return;
+      data = JSON.parse(event.data);
+    } catch(e) { return; }
+
+    if (data.method === 'Page.screencastFrame') {
+      handleScreencastFrame(data.params);
+    } else if (data.method === 'Page.frameNavigated') {
+      const url = data.params && data.params.frame && data.params.frame.url;
+      if (url) urlEl.textContent = url;
+    }
+  };
+
+  ws.onclose = () => {
+    connected = false;
+    screencastActive = false;
+    updateDot('disconnected');
+    if (cdpWsUrl) {
+      setTimeout(() => connectDirect(cdpWsUrl), 3000);
+    }
+  };
+
+  ws.onerror = () => {
+    try { ws.close(); } catch(e) {}
+  };
+}
+
+function sendCDP(method, params) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const id = msgId++;
+  ws.send(JSON.stringify({ id, method, params: params || {} }));
+  return id;
+}
+
+function startScreencast() {
+  const dpr = getDpr();
+  const w = Math.round(canvas.clientWidth * dpr);
+  const h = Math.round(canvas.clientHeight * dpr);
+  currentScreencastWidth = w;
+  currentScreencastHeight = h;
+  sendCDP('Page.startScreencast', {
+    format: 'jpeg',
+    quality: 85,
+    maxWidth: w || 1280,
+    maxHeight: h || 800,
+    everyNthFrame: 1,
+  });
+  screencastActive = true;
+}
+
+function handleScreencastFrame(params) {
+  const img = new Image();
+  img.onload = () => {
+    viewportWidth = img.width;
+    viewportHeight = img.height;
+    const dpr = getDpr();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  img.src = 'data:image/jpeg;base64,' + params.data;
+  sendCDP('Page.screencastFrameAck', { sessionId: params.sessionId });
+}
+
+// Mouse input forwarding
+function getScale() {
+  return {
+    sx: viewportWidth / canvas.clientWidth,
+    sy: viewportHeight / canvas.clientHeight,
+  };
+}
+
+function sendMouseEvent(type, e, button) {
+  if (!connected) return;
+  const { sx, sy } = getScale();
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * sx;
+  const y = (e.clientY - rect.top) * sy;
+  const btnMap = { 0: 'left', 1: 'middle', 2: 'right' };
+  sendCDP('Input.dispatchMouseEvent', {
+    type,
+    x: Math.round(x),
+    y: Math.round(y),
+    button: btnMap[button] || 'left',
+    clickCount: type === 'mousePressed' ? 1 : 0,
+  });
+}
+
+canvas.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  sendMouseEvent('mousePressed', e, e.button);
+});
+canvas.addEventListener('mouseup', (e) => {
+  e.preventDefault();
+  sendMouseEvent('mouseReleased', e, e.button);
+});
+canvas.addEventListener('mousemove', (e) => {
+  if (!connected) return;
+  const { sx, sy } = getScale();
+  const rect = canvas.getBoundingClientRect();
+  sendCDP('Input.dispatchMouseEvent', {
+    type: 'mouseMoved',
+    x: Math.round((e.clientX - rect.left) * sx),
+    y: Math.round((e.clientY - rect.top) * sy),
+  });
+});
+canvas.addEventListener('wheel', (e) => {
+  if (!connected) return;
+  e.preventDefault();
+  sendCDP('Input.dispatchMouseEvent', {
+    type: 'mouseWheel',
+    x: 0, y: 0,
+    deltaX: e.deltaX,
+    deltaY: e.deltaY,
+  });
+}, { passive: false });
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// Keyboard input forwarding
+const keyMap = {
+  'Backspace': 'Backspace', 'Tab': 'Tab', 'Enter': 'Enter',
+  'Shift': 'Shift', 'Control': 'Control', 'Alt': 'Alt',
+  'Meta': 'Meta', 'Escape': 'Escape', 'ArrowUp': 'ArrowUp',
+  'ArrowDown': 'ArrowDown', 'ArrowLeft': 'ArrowLeft',
+  'ArrowRight': 'ArrowRight',
+};
+
+function sendKeyEvent(type, e) {
+  if (!connected) return;
+  const text = e.key.length === 1 ? e.key : undefined;
+  const key = keyMap[e.key] || e.key;
+  sendCDP('Input.dispatchKeyEvent', {
+    type,
+    key,
+    code: e.code,
+    text,
+    windowsVirtualKeyCode: e.keyCode,
+    modifiers: (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0),
+  });
+}
+
+document.addEventListener('keydown', (e) => {
+  sendKeyEvent('keyDown', e);
+  if (connected && e.key !== 'F5' && e.key !== 'F12') {
+    e.preventDefault();
+  }
+});
+document.addEventListener('keyup', (e) => {
+  sendKeyEvent('keyUp', e);
+});
+
+// Entry points called by Electron main process
+window.__startCDP = function(wsUrl) {
+  connectDirect(wsUrl);
+};
+
+window.__stopCDP = function() {
+  cdpWsUrl = null;
+  if (ws) { try { ws.close(); } catch(e) {} ws = null; }
+  connected = false;
+  screencastActive = false;
+  updateDot('disconnected');
+  loadingEl.textContent = 'Browser disconnected';
+  loadingEl.style.display = 'flex';
+};
+```
+
+**Step 2: Verify the change by running the build**
+
+Run: `npm run build` (or `npx tsc --noEmit` for desktop)
+Expected: No type errors in desktop code
+
+**Step 3: Commit**
+
+```bash
+git add desktop/browser-view.html
+git commit -m "fix: DPI-aware canvas + ResizeObserver + dynamic screencast resolution"
+```
+
+---
+
+### Task 2: Fix headless mode in stealth.py
+
+**Files:**
+- Modify: `engine/utils/stealth.py:32`
+
+**Step 1: Change headless=True to headless="new"**
+
+Change line 32 from `headless=True,` to `headless="new",`
+
+**Step 2: Verify no other issues**
+
+Run: `cd engine && python -c "from utils.stealth import create_stealth_browser; print('import ok')"`
+Expected: "import ok"
+
+**Step 3: Commit**
+
+```bash
+git add engine/utils/stealth.py
+git commit -m "fix: use headless='new' for proper CDP screencast support"
+```
+
+---
+
+### Task 3: End-to-end verification
+
+**Step 1: Build the desktop app**
+
+Run: `npm run build`
+
+**Step 2: Start the app and test**
+
+1. Open the Electron app
+2. Navigate to a job and click "Apply"
+3. Click "Start" to begin automation
+4. Verify:
+   - Preview appears in the left panel (not blurry)
+   - Resize the window — preview resolution adapts dynamically
+   - Text in the preview is crisp and readable
+   - Mouse clicks in the preview work correctly

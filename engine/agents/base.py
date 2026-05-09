@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import Callable
 
@@ -14,6 +16,10 @@ class BaseAgent(ABC):
         self.on_step: (
             Callable[[str, str, str], None] | Callable[[str, str, str], object] | None
         ) = None
+        # Platform context set before run()
+        self.resume_path: str | None = profile.get("resume_path")
+        self.ats_type: str = "generic"
+        self.page_context: dict = {}
 
     @abstractmethod
     async def detect_form_fields(self, page: Page) -> list[dict]:

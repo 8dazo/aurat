@@ -23,4 +23,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getPlatform: () => process.platform,
     isPackaged: () => ipcRenderer.sendSync('app:isPackaged'),
   },
+  browser: {
+    attachUrl: (url: string) => ipcRenderer.invoke('browser:attach', url),
+    detach: () => ipcRenderer.invoke('browser:detach'),
+  },
 })

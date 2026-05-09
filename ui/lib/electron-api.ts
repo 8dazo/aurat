@@ -78,4 +78,18 @@ export const electronAPI = {
       return false
     },
   },
+  browser: {
+    attachUrl: async (url: string): Promise<{ status: string; error?: string }> => {
+      if (typeof window !== 'undefined' && window.electronAPI?.browser?.attachUrl) {
+        return window.electronAPI.browser.attachUrl(url)
+      }
+      return { status: 'unavailable' }
+    },
+    detach: async (): Promise<{ status: string }> => {
+      if (typeof window !== 'undefined' && window.electronAPI?.browser?.detach) {
+        return window.electronAPI.browser.detach()
+      }
+      return { status: 'unavailable' }
+    },
+  },
 }

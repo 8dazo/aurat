@@ -85,10 +85,10 @@ export function Sidebar() {
     return onProfileChange(loadProfile)
   }, [])
 
-  const initials = profile
+  const initials = profile?.personal_info
     ? `${profile.personal_info.first_name?.[0] || ""}${profile.personal_info.last_name?.[0] || ""}`.toUpperCase() || "?"
     : null
-  const displayName = profile
+  const displayName = profile?.personal_info
     ? `${profile.personal_info.first_name} ${profile.personal_info.last_name}`.trim()
     : null
 
@@ -124,7 +124,7 @@ export function Sidebar() {
             </div>
             <div className="min-w-0">
               <p className="text-sm font-medium truncate">{displayName}</p>
-              <p className="text-xs text-muted-foreground truncate">{profile.personal_info.email || "Profile active"}</p>
+              <p className="text-xs text-muted-foreground truncate">{profile?.personal_info?.email || "Profile active"}</p>
             </div>
           </Link>
         ) : (
