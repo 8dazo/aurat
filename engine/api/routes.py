@@ -8,11 +8,9 @@ import os
 
 import httpx
 from fastapi import APIRouter, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from playwright.async_api import Page as PlaywrightPage
 
-from agents.greenhouse import GreenhouseAgent
-from agents.universal import AutoApplyAgent
-from agents.detector import analyze_page
+from agents.aurat_agent import AuratAgent
+from agents.detector import analyze_page_url  # noqa: F401 used by detect endpoint
 from api.ws import manager
 from db.crud import (
     get_history as db_get_history,
@@ -30,22 +28,14 @@ from models.application import ApplicationStartRequest, ManualAnswerRequest
 from parsers.jd_analyzer import analyze_jd
 from parsers.llm_structured import extract_profile
 from parsers.pdf_extract import extract_text_from_pdf
-from utils.stealth import (
-    check_browser_installed,
-    connect_to_electron,
-    get_electron_cdp_url,
-    install_browser,
-)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-_active_agent: AutoApplyAgent | GreenhouseAgent | None = None
+_active_agent: AuratAgent | None = None
 _agent_task: asyncio.Task | None = None
-_active_page: PlaywrightPage | None = None
 
-# Default resume storage directory
-_RESUME_DIR = os.path.expanduser("~/.aurat")
+_RESUME_DIR = os.environ.get("AURAT_RESUME_DIR", os.path.expanduser("~/.aurat"))
 
 
 # ---------------------------------------------------------------------------
@@ -55,14 +45,7 @@ _RESUME_DIR = os.path.expanduser("~/.aurat")
 
 @router.get("/health")
 async def health():
-    browser_info = await check_browser_installed()
-    return {"status": "ok", "service": "aurat-engine", "browser": browser_info}
-
-
-@router.post("/install-browser")
-async def install_chromium():
-    result = await install_browser()
-    return result
+    return {"status": "ok", "service": "aurat-engine"}
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +104,6 @@ async def resume_status():
             "filename": "resume.pdf",
             "size_kb": size_kb,
         }
-    # Fallback: check path stored in DB profile
     try:
         profile = await db_get_profile()
         if (
@@ -144,8 +126,8 @@ async def resume_status():
 @router.post("/resume/save")
 async def save_resume_to_disk(body: dict):
     """
-    Save the raw PDF (base64-encoded) to ~/.aurat/resume.pdf so the agent
-    can pass the file path directly to Playwright's set_files() for file-picker inputs.
+    Save the raw PDF (base64-encoded) to disk so the agent
+    can pass the file path to browser-use for file-picker inputs.
     Also persists the path in the master_profile DB blob.
     """
     data = body.get("data", "")
@@ -158,12 +140,10 @@ async def save_resume_to_disk(body: dict):
         raise HTTPException(400, "Max 10MB")
 
     os.makedirs(_RESUME_DIR, exist_ok=True)
-    # Always save as resume.pdf for simplicity; we keep the original name in metadata
     save_path = os.path.join(_RESUME_DIR, "resume.pdf")
     with open(save_path, "wb") as f:
         f.write(pdf_bytes)
 
-    # Persist path to profile
     try:
         await db_save_resume_path(save_path)
     except Exception as e:
@@ -261,77 +241,21 @@ async def handle_event(body: dict):
 @router.post("/apply/detect")
 async def detect_apply_page(body: dict):
     """
-    Navigate to a job URL inside the Electron browser and return page context
-    (platform, page_type, visible_field_count) WITHOUT starting the full agent.
-    Used by the UI to display a smart banner before the user hits Start.
+    Detect the ATS platform from the URL (no browser needed).
+    Returns platform and default page_type for the UI banner.
     """
     job_url = body.get("job_url", "")
     if not job_url:
         raise HTTPException(400, "job_url required")
 
-    try:
-        cdp_url = await get_electron_cdp_url()
-        pw, browser, context, page = await connect_to_electron(cdp_url)
-
-        # ── Navigate with ERR_ABORTED / redirect handling ─────────────
-        # Sites like Stripe redirect mid-navigation, causing ERR_ABORTED
-        # on the original URL. We try "load" first, then progressively
-        # fall back to "commit" with longer delays.
-        try:
-            await page.goto(job_url, wait_until="load", timeout=45000)
-        except Exception as nav_err:
-            err_str = str(nav_err)
-            if "ERR_ABORTED" in err_str or "net::" in err_str:
-                # Give the redirect chain a moment to settle
-                await page.wait_for_timeout(3000)
-                if page.url and page.url not in ("about:blank", ""):
-                    logger.info("ERR_ABORTED but page landed at %s — waiting", page.url)
-                    try:
-                        await page.wait_for_load_state(
-                            "domcontentloaded", timeout=15000
-                        )
-                    except Exception:
-                        pass
-                else:
-                    # Retry with commit + longer settle
-                    try:
-                        await page.goto(job_url, wait_until="commit", timeout=30000)
-                        await page.wait_for_timeout(5000)
-                    except Exception:
-                        # Final attempt: just wait for whatever page we can get
-                        await page.wait_for_timeout(3000)
-                        if not page.url or page.url in ("about:blank", ""):
-                            raise nav_err
-            else:
-                raise
-
-        # If a redirect happened, wait for the new page to stabilise
-        if page.url != job_url and page.url not in ("about:blank", ""):
-            try:
-                await page.wait_for_load_state("domcontentloaded", timeout=8000)
-            except Exception:
-                pass
-
-        # Broadcast page_url so BrowserPreview can attach during detection
-        if page.url and page.url not in ("about:blank", ""):
-            await manager.broadcast_log("browser", "navigated", f"page_url={page.url}")
-
-        ctx = await analyze_page(page)
-        # Stop Playwright but keep the Electron WebContentsView alive
-        # so the user can see the preview while deciding to start.
-        try:
-            await pw.stop()
-        except Exception:
-            pass
-        return {
-            "platform": ctx.platform,
-            "page_type": ctx.page_type,
-            "visible_field_count": ctx.visible_field_count,
-            "form_count": ctx.form_count,
-            "snapshot_url": ctx.snapshot_url,
-        }
-    except Exception as e:
-        raise HTTPException(422, f"Page detection failed: {e}")
+    ctx = analyze_page_url(job_url)
+    return {
+        "platform": ctx.platform,
+        "page_type": ctx.page_type,
+        "visible_field_count": ctx.visible_field_count,
+        "form_count": ctx.form_count,
+        "snapshot_url": ctx.snapshot_url,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -341,7 +265,7 @@ async def detect_apply_page(body: dict):
 
 @router.post("/apply")
 async def start_application(body: ApplicationStartRequest):
-    global _active_agent, _agent_task, _active_page
+    global _active_agent, _agent_task
     if not body.job_url or not body.profile:
         raise HTTPException(400, "job_url and profile required")
 
@@ -350,7 +274,6 @@ async def start_application(body: ApplicationStartRequest):
 
     profile_data = body.profile if isinstance(body.profile, dict) else {}
 
-    # ── Inject resume_path from DB if not in request profile ──────────
     if not profile_data.get("resume_path"):
         saved_resume = os.path.join(_RESUME_DIR, "resume.pdf")
         if os.path.exists(saved_resume):
@@ -363,121 +286,49 @@ async def start_application(body: ApplicationStartRequest):
             except Exception:
                 pass
 
-    # ── Inject job context for memory enrichment ───────────────────────
     profile_data["_current_job_url"] = body.job_url or ""
     profile_data["_current_company"] = body.job_company or ""
+    profile_data["_current_ats_type"] = body.ats_type or "generic"
 
-    # Use AutoApplyAgent for all platforms (falls back internally to greenhouse signals)
-    _active_agent = AutoApplyAgent(profile_data)
+    _active_agent = AuratAgent(profile_data)
     _active_agent.ats_type = body.ats_type or "generic"
-    _active_page = None
+
+    if _active_agent:
+        _active_agent.on_step = lambda step, status, detail="": asyncio.ensure_future(
+            manager.broadcast_log(step, status, detail)
+        )
 
     job_url = body.job_url
     job_title = body.job_title
     job_company = body.job_company
 
+    history_entry = await db_save_history(
+        {
+            "job_url": job_url,
+            "snapshot_url": job_url,
+            "ats_platform": body.ats_type or "generic",
+            "job_title": job_title,
+            "company": job_company,
+            "match_score": None,
+            "status": "running",
+            "steps_log": [],
+            "custom_questions": [],
+        }
+    )
+    history_id = history_entry.get("id") if isinstance(history_entry, dict) else None
+
     async def run_agent():
-        global _active_agent, _active_page
-
-        logger.info("run_agent: connecting to Electron CDP…")
-        try:
-            cdp_url = await get_electron_cdp_url()
-        except Exception as e:
-            logger.exception("run_agent: CDP URL failed: %s", e)
-            await manager.broadcast_log("browser", "error", f"electron_cdp_failed: {e}")
-            await manager.broadcast_status("Idle")
-            _active_agent = None
-            _agent_task = None
-            return
+        global _active_agent, _agent_task
+        agent = _active_agent
 
         try:
-            pw, browser, context, page = await connect_to_electron(cdp_url)
-        except Exception as e:
-            logger.exception("run_agent: Electron connect failed: %s", e)
-            await manager.broadcast_log(
-                "browser", "error", f"browser_connect_failed: {e}"
-            )
-            await manager.broadcast_status("Idle")
-            _active_agent = None
-            _agent_task = None
-            return
-
-        _active_page = page
-
-        # ── Save history row early so we have an ID ──────────────────
-        history_entry = await db_save_history(
-            {
-                "job_url": job_url,
-                "snapshot_url": job_url,
-                "ats_platform": body.ats_type or "generic",
-                "job_title": job_title,
-                "company": job_company,
-                "match_score": None,
-                "status": "running",
-                "steps_log": [],
-                "custom_questions": [],
-            }
-        )
-        history_id = (
-            history_entry.get("id") if isinstance(history_entry, dict) else None
-        )
-
-        try:
-            await page.goto("about:blank")
-            await manager.broadcast_log("browser", "started", "page_url=about:blank")
-            logger.info("run_agent: navigating to %s", job_url)
-            await manager.broadcast_log(
-                "navigation", "running", f"Navigating to {job_url}"
-            )
-            try:
-                await page.goto(job_url, wait_until="networkidle", timeout=30000)
-            except Exception as nav_err:
-                err_str = str(nav_err)
-                if "ERR_ABORTED" in err_str or "net::" in err_str:
-                    await page.wait_for_timeout(3000)
-                    if page.url and page.url not in ("about:blank", ""):
-                        logger.info(
-                            "ERR_ABORTED but page landed at %s — waiting", page.url
-                        )
-                        await manager.broadcast_log(
-                            "browser", "navigated", f"page_url={page.url}"
-                        )
-                        try:
-                            await page.wait_for_load_state(
-                                "domcontentloaded", timeout=15000
-                            )
-                        except Exception:
-                            pass
-                    else:
-                        try:
-                            await page.goto(job_url, wait_until="commit", timeout=30000)
-                            await page.wait_for_timeout(5000)
-                        except Exception:
-                            await page.wait_for_timeout(3000)
-                            if not page.url or page.url in ("about:blank", ""):
-                                raise nav_err
-                else:
-                    raise
-            logger.info("run_agent: page loaded")
-            current_url = page.url
-            await manager.broadcast_log(
-                "browser", "navigated", f"page_url={current_url}"
-            )
-            await manager.broadcast_log("navigation", "completed", "Page loaded")
-
-            if _active_agent:
-                _active_agent.on_step = lambda step, status, detail="": (
-                    asyncio.ensure_future(manager.broadcast_log(step, status, detail))
-                )
-            await manager.broadcast_status("Running")
-
-            if _active_agent:
-                await _active_agent.run(page)
-
-            # Capture final snapshot URL
-            final_url = page.url or job_url
-            final_steps = _active_agent.steps_log if _active_agent else []
-            final_questions = _active_agent.custom_questions if _active_agent else []
+            if agent is None:
+                logger.error("run_agent: agent is None")
+                await manager.broadcast_status("Idle")
+                return
+            await agent.run()
+            final_steps = agent.steps_log
+            final_questions = agent.custom_questions
 
             if history_id:
                 await db_update_history_status(history_id, "completed", final_steps)
@@ -489,24 +340,12 @@ async def start_application(body: ApplicationStartRequest):
             logger.exception("Agent run failed: %s", e)
             await manager.broadcast_log("agent", "error", error_msg)
             if history_id:
-                steps = _active_agent.steps_log if _active_agent else []
+                steps = agent.steps_log if agent else []
                 await db_update_history_status(history_id, "failed", steps)
             await manager.broadcast_status("Idle")
         finally:
             _active_agent = None
             _agent_task = None
-            _active_page = None
-            try:
-                await pw.stop()
-            except Exception:
-                pass
-            try:
-                async with httpx.AsyncClient() as client:
-                    await client.get(
-                        "http://127.0.0.1:18733/detach-agent-view", timeout=5.0
-                    )
-            except Exception:
-                pass
 
     _agent_task = asyncio.create_task(run_agent())
     return {

@@ -3,10 +3,9 @@
 import { useEffect, useState, useCallback } from "react"
 import { useAgentWs } from "@/lib/use-agent-ws"
 import { electronAPI } from "@/lib/electron-api"
+import { type AgentStatus } from "@/lib/constants"
 import { Badge } from "@/components/ui/badge"
 import { Monitor } from "lucide-react"
-
-type AgentStatus = "Idle" | "Running" | "Paused"
 
 export function BrowserPreview() {
   const [status, setStatus] = useState<AgentStatus>("Idle")

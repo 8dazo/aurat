@@ -17,20 +17,19 @@ import {
 import { electronAPI } from "@/lib/electron-api"
 import { toast } from "sonner"
 
-type ModelOption = "gpt-oss:120b-cloud" | "gpt-oss" | "custom"
+type ModelOption = "liquid/lfm-2.5-1.2b-thinking:free" | "anthropic/claude-3.5-sonnet" | "openrouter/auto" | "custom"
 
 export default function SettingsPage() {
   const [apiKey, setApiKey] = useState("")
   const [showApiKey, setShowApiKey] = useState(false)
-  const [model, setModel] = useState<ModelOption>("gpt-oss:120b-cloud")
+  const [model, setModel] = useState<ModelOption>("liquid/lfm-2.5-1.2b-thinking:free")
   const [customModel, setCustomModel] = useState("")
   const [llmTestStatus, setLlmTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle")
 
   const [dbConfigured, setDbConfigured] = useState(false)
   const [dbStatus, setDbStatus] = useState<"unknown" | "connected" | "not-configured" | "testing" | "error">("unknown")
 
-  const [pwStatus, setPwStatus] = useState<"unknown" | "installed" | "not-installed" | "installing" | "checking">("unknown")
-  const [browserVersion, setBrowserVersion] = useState<string | null>(null)
+  const [browserStatus, setBrowserStatus] = useState<"unknown" | "ok" | "error" | "checking">("unknown")
 
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved">("idle")
 
@@ -48,7 +47,7 @@ export default function SettingsPage() {
     }
 
     checkDbConnection()
-    checkPlaywright()
+    checkBrowser()
   }, [])
 
   async function testLlmConnection() {
@@ -78,30 +77,17 @@ export default function SettingsPage() {
     }
   }
 
-  async function checkPlaywright() {
-    setPwStatus("checking")
+  async function checkBrowser() {
+    setBrowserStatus("checking")
     try {
       const result = await electronAPI.python.request("/health")
-      if (result && typeof result === "object" && (result as Record<string, unknown>).browser) {
-        setPwStatus("installed")
-        setBrowserVersion((result as Record<string, unknown>).browser as string)
+      if (result && typeof result === "object" && (result as Record<string, unknown>).status === "ok") {
+        setBrowserStatus("ok")
       } else {
-        setPwStatus("not-installed")
+        setBrowserStatus("error")
       }
     } catch {
-      toast.error("Failed to check Playwright status")
-      setPwStatus("not-installed")
-    }
-  }
-
-  async function installChromium() {
-    setPwStatus("installing")
-    try {
-      await electronAPI.python.request("/install-browser", {}, 300000)
-      await checkPlaywright()
-    } catch {
-      toast.error("Failed to install Chromium")
-      setPwStatus("not-installed")
+      setBrowserStatus("error")
     }
   }
 
@@ -123,12 +109,12 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>LLM Configuration</CardTitle>
+          <CardTitle>OpenRouter Configuration</CardTitle>
           <CardDescription>Set up your language model connection</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="api-key">OLLAMA_API_KEY</Label>
+            <Label htmlFor="api-key">OPENROUTER_API_KEY</Label>
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Input
@@ -159,8 +145,9 @@ export default function SettingsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="gpt-oss:120b-cloud">gpt-oss:120b-cloud</SelectItem>
-                <SelectItem value="gpt-oss">gpt-oss (local)</SelectItem>
+                <SelectItem value="liquid/lfm-2.5-1.2b-thinking:free">liquid/lfm-2.5-1.2b-thinking:free</SelectItem>
+                <SelectItem value="anthropic/claude-3.5-sonnet">anthropic/claude-3.5-sonnet</SelectItem>
+                <SelectItem value="openrouter/auto">openrouter/auto</SelectItem>
                 <SelectItem value="custom">custom</SelectItem>
               </SelectContent>
             </Select>
@@ -232,58 +219,39 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Playwright Browser</CardTitle>
-          <CardDescription>Browser engine for automated interactions</CardDescription>
+          <CardTitle>Browser</CardTitle>
+          <CardDescription>CloakBrowser manages its own browser</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-3">
             <Badge
               className={
-                pwStatus === "installed"
+                browserStatus === "ok"
                   ? "bg-green-500/20 text-green-400 border-green-500/30"
-                  : pwStatus === "not-installed"
+                  : browserStatus === "error"
                   ? "bg-red-500/20 text-red-400 border-red-500/30"
-                  : pwStatus === "installing"
+                  : browserStatus === "checking"
                   ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
                   : "bg-muted text-muted-foreground"
               }
             >
-              {pwStatus === "installed"
-                ? "Installed"
-                : pwStatus === "not-installed"
-                ? "Not installed"
-                : pwStatus === "installing"
-                ? "Installing..."
-                : pwStatus === "checking"
+              {browserStatus === "ok"
+                ? "Running"
+                : browserStatus === "error"
+                ? "Not available"
+                : browserStatus === "checking"
                 ? "Checking..."
                 : "Unknown"}
             </Badge>
-
-            {pwStatus === "installed" && browserVersion && (
-              <span className="text-xs text-muted-foreground">{browserVersion}</span>
-            )}
           </div>
-
-          {(pwStatus === "not-installed" || pwStatus === "installing") && (
-            <div className="space-y-3">
-              {pwStatus === "not-installed" && (
-                <Button onClick={installChromium}>Install Chromium</Button>
-              )}
-              {pwStatus === "installing" && (
-                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
-                </div>
-              )}
-            </div>
-          )}
 
           <Button
             variant="outline"
             size="sm"
-            onClick={checkPlaywright}
-            disabled={pwStatus === "checking" || pwStatus === "installing"}
+            onClick={checkBrowser}
+            disabled={browserStatus === "checking"}
           >
-            Check Installation
+            Check Status
           </Button>
         </CardContent>
       </Card>

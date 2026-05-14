@@ -24,7 +24,7 @@ import json
 import logging
 import os
 import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import aiosqlite
@@ -43,7 +43,7 @@ DB_PATH = os.environ.get(
 
 _embedder = None
 _embedder_lock = asyncio.Lock()
-_EMBED_MODEL = "all-MiniLM-L6-v2"  # 80 MB, CPU fast, 384-dim
+_EMBED_MODEL = os.environ.get("AURAT_EMBED_MODEL", "all-MiniLM-L6-v2")
 
 
 async def _get_embedder():
@@ -338,7 +338,7 @@ class HybridStore:
             llm = LLMClient()
 
             # Score each candidate (in batches to be efficient)
-            candidates = results[:min(len(results), 10)]
+            candidates = results[: min(len(results), 10)]
             reranked = []
             for i, res in enumerate(candidates):
                 prompt = (

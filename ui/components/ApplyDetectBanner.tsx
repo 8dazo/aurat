@@ -1,14 +1,8 @@
 "use client"
 
 import React, { useEffect, useState } from "react"
-
-interface DetectResult {
-  platform: string
-  page_type: "description_only" | "form" | "multi_step"
-  visible_field_count: number
-  form_count: number
-  snapshot_url: string
-}
+import { type DetectResult } from "@/lib/constants"
+import { electronAPI } from "@/lib/electron-api"
 
 interface ApplyDetectBannerProps {
   jobUrl: string
@@ -68,8 +62,7 @@ export function ApplyDetectBanner({ jobUrl, onDetected, onError }: ApplyDetectBa
 
     const detect = async () => {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const raw = await (window as any).electronAPI?.python?.request(
+        const raw = await electronAPI.python.request(
           "/apply/detect",
           { job_url: jobUrl }
         )
@@ -88,7 +81,6 @@ export function ApplyDetectBanner({ jobUrl, onDetected, onError }: ApplyDetectBa
 
     detect()
     return () => { cancelled = true }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobUrl])
 
   if (phase === "scanning") {

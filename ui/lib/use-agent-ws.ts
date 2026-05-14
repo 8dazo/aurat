@@ -1,11 +1,11 @@
 "use client"
 
 import { useEffect, useRef, useState, useCallback } from "react"
+import { WS_URL, type AgentStatus } from "@/lib/constants"
 
-const WS_URL = "ws://localhost:18732"
 const RECONNECT_DELAY = 2000
 
-export type AgentStatus = "Idle" | "Running" | "Paused"
+export type { AgentStatus }
 
 interface UseAgentWsOptions {
   onStatus?: (status: AgentStatus, pauseReason: string | null) => void

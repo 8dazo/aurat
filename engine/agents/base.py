@@ -3,8 +3,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Callable
 
-from playwright.async_api import Page
-
 
 class BaseAgent(ABC):
     def __init__(self, profile: dict):
@@ -16,25 +14,12 @@ class BaseAgent(ABC):
         self.on_step: (
             Callable[[str, str, str], None] | Callable[[str, str, str], object] | None
         ) = None
-        # Platform context set before run()
         self.resume_path: str | None = profile.get("resume_path")
         self.ats_type: str = "generic"
         self.page_context: dict = {}
 
     @abstractmethod
-    async def detect_form_fields(self, page: Page) -> list[dict]:
-        pass
-
-    @abstractmethod
-    async def fill_field(self, page: Page, field: dict, value: str):
-        pass
-
-    @abstractmethod
-    async def submit(self, page: Page):
-        pass
-
-    @abstractmethod
-    async def run(self, page: Page):
+    async def run(self, page=None):
         pass
 
     async def pause(self, reason: str = ""):

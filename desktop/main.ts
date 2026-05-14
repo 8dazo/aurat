@@ -12,6 +12,7 @@ let pyProc: ChildProcess | null = null
 let browserView: WebContentsView | null = null
 let infoServer: http.Server | null = null
 let agentViewOwnedByEngine = false
+const CLOAK_CDP_PORT = 9242
 
 function startPythonBackend(cdpPortNum: number) {
   const env = { ...process.env, PYTHONUNBUFFERED: '1', ELECTRON_CDP_PORT: String(cdpPortNum) }
@@ -50,7 +51,7 @@ function startInfoServer() {
   infoServer = http.createServer(async (req, res) => {
     if (req.url === '/cdp-info') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ cdp_port: cdpPort }))
+      res.end(JSON.stringify({ cdp_port: CLOAK_CDP_PORT }))
     } else if (req.url === '/attach-agent-view') {
       // Called by Python backend before connecting via CDP.
       // Creates the WebContentsView so it appears as a page target in CDP.
@@ -203,16 +204,10 @@ function resizeBrowserView() {
   })
 }
 
-// Set CDP port BEFORE app.whenReady() — Chromium reads this at startup.
-// Use a fixed port in the dynamic range; if it's taken, Chromium will find another.
-const CDP_PORT = 9222
-app.commandLine.appendSwitch('remote-debugging-port', String(CDP_PORT))
-let cdpPort: number = CDP_PORT
-
 app.whenReady().then(async () => {
   registerIpcHandlers()
 
-  ipcMain.handle('browser:getCdpPort', () => cdpPort)
+  ipcMain.handle('browser:getCdpPort', () => CLOAK_CDP_PORT)
 
   ipcMain.handle('browser:attach', async (_event, url: string) => {
     if (agentViewOwnedByEngine) {
@@ -226,7 +221,7 @@ app.whenReady().then(async () => {
     return { status: 'detached' }
   })
 
-  startPythonBackend(cdpPort)
+  startPythonBackend(CLOAK_CDP_PORT)
   startInfoServer()
   await waitForPython()
   createWindow()
