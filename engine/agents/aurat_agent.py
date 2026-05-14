@@ -22,7 +22,7 @@ from browser_use import Agent, Browser, BrowserConfig
 
 from agents.base import BaseAgent
 from agents.detector import detect_ats_platform_url
-from llm.openrouter import get_llm
+from llm.openrouter import get_agent_llm
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +176,7 @@ If you encounter a custom question you cannot answer from the profile, type "PAU
 Complete the entire application process end-to-end."""
 
 
-_CLOAK_HEADLESS = os.environ.get("AURAT_HEADLESS", "false").lower() in (
+_CLOAK_HEADLESS = os.environ.get("AURAT_HEADLESS", "true").lower() in (
     "true",
     "1",
     "yes",
@@ -200,11 +200,32 @@ class AuratAgent(BaseAgent):
         port = _find_available_port(self.cdp_port)
         self.cdp_port = port
 
+        # Kill any existing Chrome on this port
+        try:
+            import signal
+
+            result = subprocess.run(
+                ["ps", "aux"], capture_output=True, text=True, timeout=5
+            )
+            for line in result.stdout.split("\n"):
+                if f"remote-debugging-port={port}" in line and "Chrom" in line:
+                    parts = line.split()
+                    if len(parts) > 1:
+                        try:
+                            subprocess.run(
+                                ["kill", str(int(parts[1]))],
+                                capture_output=True,
+                                timeout=3,
+                            )
+                        except (ValueError, subprocess.TimeoutExpired):
+                            pass
+            await asyncio.sleep(1)
+        except Exception:
+            pass
+
         binary_path = _get_stealth_binary_path()
         stealth_args = _get_stealth_args()
         self.user_data_dir = tempfile.mkdtemp(prefix="aurat_chrome_")
-
-        headless_flag = "--headless=new" if _CLOAK_HEADLESS else ""
 
         cmd = [
             binary_path,
@@ -219,8 +240,8 @@ class AuratAgent(BaseAgent):
             "--disable-dev-shm-usage",
         ]
 
-        if headless_flag:
-            cmd.append(headless_flag)
+        if _CLOAK_HEADLESS:
+            cmd.append("--headless=new")
 
         cmd.extend(stealth_args)
         cmd.append("about:blank")
@@ -343,12 +364,12 @@ class AuratAgent(BaseAgent):
 
             self.log_step("detect", "completed", f"platform={ats_type}")
 
-            # Broadcast the job URL so Electron's preview navigates there too
-            await manager.broadcast_log("browser", "navigated", f"page_url={job_url}")
-
             task_prompt = _build_task_prompt(job_url, self.profile, ats_type)
 
-            llm = get_llm()
+            # Broadcast the job URL immediately so Electron preview navigates there
+            await manager.broadcast_log("browser", "navigated", f"page_url={job_url}")
+
+            llm = get_agent_llm()
 
             # Callback to broadcast progress to the UI on each step
             async def on_step(state, model_output, step_num):
