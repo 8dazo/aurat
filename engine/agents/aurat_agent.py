@@ -1,9 +1,10 @@
 """
 aurat_agent.py — Browser-use orchestrator for auto-apply.
 
-Launches CloakBrowser's stealth Chromium as a subprocess with CDP,
-connects browser-use via CDP (like stapply), and streams the page URL
-to Electron's preview so the user can watch the agent work live.
+Connects browser-use to Electron's built-in Chromium via CDP so the
+browser preview shows the agent working live inside the app.
+Uses CloakBrowser's stealth Chromium binary for anti-detection,
+connecting to it via CDP (like the stapply pattern).
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 _MEMORY = None
 
-CDP_PORT = int(os.environ.get("AURAT_CDP_PORT", "9242"))
+CDP_PORT = int(os.environ.get("AURAT_CDP_PORT", "9222"))
 
 
 def _get_memory():
@@ -43,7 +44,7 @@ def _get_memory():
     return _MEMORY
 
 
-def _find_available_port(start_port: int = 9242) -> int:
+def _find_available_port(start_port: int = 9222) -> int:
     """Find an available port starting from start_port."""
     for port in range(start_port, start_port + 100):
         try:
@@ -56,7 +57,7 @@ def _find_available_port(start_port: int = 9242) -> int:
 
 
 def _get_stealth_binary_path() -> str:
-    """Get the CloakBrowser stealth Chromium binary path."""
+    """Get CloakBrowser's stealth Chromium binary path."""
     from cloakbrowser import ensure_binary
 
     return ensure_binary()
@@ -67,6 +68,37 @@ def _get_stealth_args() -> list[str]:
     from cloakbrowser import get_default_stealth_args
 
     return get_default_stealth_args()
+
+
+def _inject_stealth_js() -> str:
+    """Return stealth JS to inject into every page (replaces the old stealth.py)."""
+    return """
+// Remove navigator.webdriver
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+
+// Mock chrome.runtime
+if (!window.chrome) {
+    window.chrome = { runtime: {} };
+}
+
+// Override permissions.query
+const originalQuery = window.navigator.permissions.query.bind(window.navigator.permissions);
+window.navigator.permissions.query = (parameters) => (
+    parameters.name === 'notifications'
+        ? Promise.resolve({ state: Notification.permission })
+        : originalQuery(parameters)
+);
+
+// Mock plugins
+Object.defineProperty(navigator, 'plugins', {
+    get: () => [1, 2, 3, 4, 5],
+});
+
+// Mock languages
+Object.defineProperty(navigator, 'languages', {
+    get: () => ['en-US', 'en'],
+});
+"""
 
 
 _ATS_CONTEXT = {
@@ -193,17 +225,15 @@ class AuratAgent(BaseAgent):
         self.ats_type: str = "generic"
 
     async def _start_stealth_chrome(self) -> int:
-        """Launch CloakBrowser's stealth Chromium as a subprocess with CDP enabled.
+        """Launch CloakBrowser's stealth Chromium with CDP.
 
         Returns the CDP port number.
         """
         port = _find_available_port(self.cdp_port)
         self.cdp_port = port
 
-        # Kill any existing Chrome on this port
+        # Kill existing Chrome on this port
         try:
-            import signal
-
             result = subprocess.run(
                 ["ps", "aux"], capture_output=True, text=True, timeout=5
             )
@@ -246,9 +276,7 @@ class AuratAgent(BaseAgent):
         cmd.extend(stealth_args)
         cmd.append("about:blank")
 
-        logger.info(
-            "Launching stealth Chrome on CDP port %d: %s", port, " ".join(cmd[:5])
-        )
+        logger.info("Launching stealth Chrome on CDP port %d", port)
 
         self.chrome_process = subprocess.Popen(
             cmd,
@@ -275,7 +303,6 @@ class AuratAgent(BaseAgent):
             except (httpx.ConnectError, httpx.TimeoutException):
                 await asyncio.sleep(1)
 
-        # Check if process died
         if self.chrome_process.poll() is not None:
             raise RuntimeError(
                 f"Chrome process exited with code {self.chrome_process.returncode}"
@@ -284,7 +311,7 @@ class AuratAgent(BaseAgent):
         raise RuntimeError(f"Chrome CDP not ready on port {port} after 30s")
 
     async def _stop_stealth_chrome(self):
-        """Terminate the Chrome subprocess and clean up."""
+        """Terminate Chrome and clean up."""
         if self.chrome_process and self.chrome_process.poll() is None:
             self.chrome_process.terminate()
             try:
@@ -293,7 +320,6 @@ class AuratAgent(BaseAgent):
                 self.chrome_process.kill()
             self.chrome_process = None
 
-        # Clean up temp dir
         if self.user_data_dir:
             try:
                 import shutil
@@ -304,7 +330,6 @@ class AuratAgent(BaseAgent):
                 pass
 
     async def _notify_electron_attach(self):
-        """Tell Electron to show the browser preview."""
         try:
             async with httpx.AsyncClient() as client:
                 await client.get(
@@ -312,10 +337,9 @@ class AuratAgent(BaseAgent):
                     timeout=httpx.Timeout(timeout=15.0),
                 )
         except Exception:
-            pass  # Non-critical — preview is optional
+            pass
 
     async def _notify_electron_detach(self):
-        """Tell Electron to hide the browser preview."""
         try:
             async with httpx.AsyncClient() as client:
                 await client.get(
@@ -349,7 +373,7 @@ class AuratAgent(BaseAgent):
             await manager.broadcast_status("Idle")
             return
 
-        # 2. Tell Electron to attach the browser preview
+        # 2. Tell Electron to show the browser preview
         await self._notify_electron_attach()
 
         cdp_url = f"http://127.0.0.1:{port}"
@@ -366,12 +390,11 @@ class AuratAgent(BaseAgent):
 
             task_prompt = _build_task_prompt(job_url, self.profile, ats_type)
 
-            # Broadcast the job URL immediately so Electron preview navigates there
+            # Broadcast job URL so Electron preview can navigate
             await manager.broadcast_log("browser", "navigated", f"page_url={job_url}")
 
             llm = get_agent_llm()
 
-            # Callback to broadcast progress to the UI on each step
             async def on_step(state, model_output, step_num):
                 try:
                     current_url = ""
@@ -386,7 +409,6 @@ class AuratAgent(BaseAgent):
                         step_name += f": {', '.join(action_names)}"
                     if current_url:
                         step_name += f" → {current_url}"
-                        # Tell Electron preview to navigate to this URL
                         await manager.broadcast_log(
                             "browser", "navigated", f"page_url={current_url}"
                         )

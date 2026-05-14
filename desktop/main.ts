@@ -12,7 +12,11 @@ let pyProc: ChildProcess | null = null
 let browserView: WebContentsView | null = null
 let infoServer: http.Server | null = null
 let agentViewOwnedByEngine = false
-const CLOAK_CDP_PORT = 9242
+
+// The CDP port where the stealth Chrome exposes DevTools Protocol.
+// browser-use connects to this port. Electron's BrowserPreview
+// navigates to the same URLs the agent visits.
+const AGENT_CDP_PORT = 9222
 
 function startPythonBackend(cdpPortNum: number) {
   const env = { ...process.env, PYTHONUNBUFFERED: '1', ELECTRON_CDP_PORT: String(cdpPortNum) }
@@ -51,7 +55,7 @@ function startInfoServer() {
   infoServer = http.createServer(async (req, res) => {
     if (req.url === '/cdp-info') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ cdp_port: CLOAK_CDP_PORT }))
+      res.end(JSON.stringify({ cdp_port: AGENT_CDP_PORT }))
     } else if (req.url === '/attach-agent-view') {
       // Called by Python backend before connecting via CDP.
       // Creates the WebContentsView so it appears as a page target in CDP.
@@ -212,7 +216,7 @@ function resizeBrowserView() {
 app.whenReady().then(async () => {
   registerIpcHandlers()
 
-  ipcMain.handle('browser:getCdpPort', () => CLOAK_CDP_PORT)
+  ipcMain.handle('browser:getCdpPort', () => AGENT_CDP_PORT)
 
   ipcMain.handle('browser:attach', async (_event, url: string) => {
     if (agentViewOwnedByEngine) {
@@ -226,7 +230,7 @@ app.whenReady().then(async () => {
     return { status: 'detached' }
   })
 
-  startPythonBackend(CLOAK_CDP_PORT)
+  startPythonBackend(AGENT_CDP_PORT)
   startInfoServer()
   await waitForPython()
   createWindow()
