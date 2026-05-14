@@ -63,12 +63,15 @@ def get_llm(
         )
 
     # Default: Ollama cloud (free models)
+    # Ollama cloud supports OpenAI-compatible API at /v1/chat/completions
     headers = {}
     if api_key or OLLAMA_API_KEY:
         headers["Authorization"] = f"Bearer {api_key or OLLAMA_API_KEY}"
 
+    base_url = f"{OLLAMA_HOST.rstrip('/')}/v1"
+
     return ChatOpenAI(
-        base_url=f"{OLLAMA_HOST}/api",
+        base_url=base_url,
         api_key=api_key or OLLAMA_API_KEY or "ollama",
         model=model or OLLAMA_CLOUD_MODEL,
         temperature=temperature,
@@ -82,28 +85,28 @@ def get_agent_llm(
     temperature: float = 0,
     **kwargs,
 ) -> ChatOpenAI:
-    """Get LLM for browser-use agent. Uses browser-use capable model.
+    """Get LLM for browser-use agent.
 
-    Priority: OPENROUTER_MODEL env var (if OPENROUTER_API_KEY set) → Ollama cloud.
-    Browser-use needs strong tool-calling models, so this defaults to
-    the best available free model.
+    Respects AURAT_LLM_BACKEND env var:
+      - 'ollama' (default): uses Ollama cloud with kimi-k2.6:cloud
+      - 'openrouter': uses OpenRouter with whatever OPENROUTER_MODEL is set
     """
-    if OPENROUTER_API_KEY:
+    backend = (kwargs.pop("backend", None) or LLM_BACKEND).lower()
+
+    if backend == "openrouter":
         return get_llm(
             model=model or OPENROUTER_MODEL,
             api_key=api_key or OPENROUTER_API_KEY,
             temperature=temperature,
             backend="openrouter",
-            **kwargs,
         )
 
-    # Fallback to Ollama cloud — gpt-oss:120b works for browser-use
+    # Default: Ollama cloud
     return get_llm(
         model=model or OLLAMA_CLOUD_MODEL,
         api_key=api_key or OLLAMA_API_KEY,
         temperature=temperature,
         backend="ollama",
-        **kwargs,
     )
 
 
