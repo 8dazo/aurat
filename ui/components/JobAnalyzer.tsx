@@ -93,7 +93,7 @@ export function JobAnalyzer({ job, profile, onBack }: JobAnalyzerProps) {
       url: job.url,
       title: job.title,
       company: job.company,
-      ats_type: job.atsType || "greenhouse",
+      ats_type: job.atsType || "generic",
     })
     if (job.location) params.set("location", job.location)
     router.push(`/apply?${params.toString()}`)

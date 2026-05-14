@@ -81,7 +81,7 @@ export function JobBrowser() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
-  const [atsType, setAtsType] = useState<string>("all")
+  const [atsType, setAtsType] = useState<string>("greenhouse")
   const [location, setLocation] = useState<string>("all")
   const [postedWithin, setPostedWithin] = useState<string>("all")
   const [selectedJob, setSelectedJob] = useState<Job | null>(null)
@@ -140,7 +140,7 @@ export function JobBrowser() {
       url: job.url,
       title: job.title,
       company: job.company,
-      ats_type: job.atsType || "greenhouse",
+      ats_type: job.atsType || "generic",
     })
     if (job.location) params.set("location", job.location)
     router.push(`/apply?${params.toString()}`)

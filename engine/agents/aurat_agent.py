@@ -143,6 +143,13 @@ If you encounter a custom question you cannot answer from the profile, type "PAU
 Complete the entire application process end-to-end."""
 
 
+_CLOAK_HEADLESS = os.environ.get("AURAT_HEADLESS", "true").lower() in (
+    "true",
+    "1",
+    "yes",
+)
+
+
 class AuratAgent(BaseAgent):
     def __init__(self, profile: dict):
         super().__init__(profile)
@@ -185,11 +192,13 @@ class AuratAgent(BaseAgent):
 
         try:
             self.cloak_browser = await launch_async(
-                headless=False,
+                headless=_CLOAK_HEADLESS,
                 humanize=True,
                 args=[
                     "--remote-debugging-port=9242",
                     "--remote-debugging-address=127.0.0.1",
+                    "--no-first-run",
+                    "--no-default-browser-check",
                 ],
             )
         except Exception as e:
@@ -220,14 +229,34 @@ class AuratAgent(BaseAgent):
 
             task_prompt = _build_task_prompt(job_url, self.profile, ats_type)
 
-            await manager.broadcast_log("browser", "started", "page_url=about:blank")
+            # Broadcast the job URL immediately so the preview can navigate
+            await manager.broadcast_log("browser", "navigated", f"page_url={job_url}")
 
             llm = get_llm()
+
+            # Callback to broadcast current page URL to the UI on each step
+            async def on_step(state, model_output, step_num):
+                try:
+                    current_url = ""
+                    if state and hasattr(state, "url") and state.url:
+                        current_url = state.url
+                    elif state and hasattr(state, "tabs") and state.tabs:
+                        for tab in state.tabs:
+                            if tab.url and not tab.url.startswith("data:"):
+                                current_url = tab.url
+                                break
+                    if current_url:
+                        await manager.broadcast_log(
+                            "browser", "navigated", f"page_url={current_url}"
+                        )
+                except Exception:
+                    pass
 
             agent = Agent(
                 task=task_prompt,
                 llm=llm,
                 browser=session,
+                register_new_step_callback=on_step,
             )
 
             self.log_step("detect_fields", "running", "Agent processing page...")

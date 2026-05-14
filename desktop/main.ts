@@ -125,7 +125,12 @@ async function attachBrowserView(url: string): Promise<{ status: string; error?:
     return { status: 'error', error: 'No main window' }
   }
 
-  detachBrowserView()
+  // If the browser view already exists, just navigate to the new URL
+  if (browserView) {
+    browserView.webContents.loadURL(url)
+    resizeBrowserView()
+    return { status: 'attached' }
+  }
 
   browserView = new WebContentsView({
     webPreferences: {
