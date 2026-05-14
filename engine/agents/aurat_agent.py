@@ -143,7 +143,7 @@ If you encounter a custom question you cannot answer from the profile, type "PAU
 Complete the entire application process end-to-end."""
 
 
-_CLOAK_HEADLESS = os.environ.get("AURAT_HEADLESS", "true").lower() in (
+_CLOAK_HEADLESS = os.environ.get("AURAT_HEADLESS", "false").lower() in (
     "true",
     "1",
     "yes",
@@ -216,39 +216,26 @@ class AuratAgent(BaseAgent):
 
             self.log_step("detect", "completed", f"platform={ats_type}")
 
-            # Notify Electron to preview this browser
-            try:
-                import httpx
-
-                async with httpx.AsyncClient() as client:
-                    await client.get(
-                        "http://127.0.0.1:18733/attach-agent-view", timeout=15.0
-                    )
-            except Exception:
-                pass  # Non-critical — preview is optional
-
             task_prompt = _build_task_prompt(job_url, self.profile, ats_type)
-
-            # Broadcast the job URL immediately so the preview can navigate
-            await manager.broadcast_log("browser", "navigated", f"page_url={job_url}")
 
             llm = get_llm()
 
-            # Callback to broadcast current page URL to the UI on each step
+            # Broadcast agent step progress to UI
             async def on_step(state, model_output, step_num):
                 try:
                     current_url = ""
                     if state and hasattr(state, "url") and state.url:
                         current_url = state.url
-                    elif state and hasattr(state, "tabs") and state.tabs:
-                        for tab in state.tabs:
-                            if tab.url and not tab.url.startswith("data:"):
-                                current_url = tab.url
-                                break
+                    step_name = f"Step {step_num}"
+                    action_names = []
+                    if model_output and hasattr(model_output, "action"):
+                        for action in model_output.action:
+                            action_names.append(type(action).__name__)
+                    if action_names:
+                        step_name += f": {', '.join(action_names)}"
                     if current_url:
-                        await manager.broadcast_log(
-                            "browser", "navigated", f"page_url={current_url}"
-                        )
+                        step_name += f" → {current_url}"
+                    self.log_step("agent", "running", step_name)
                 except Exception:
                     pass
 
@@ -279,15 +266,6 @@ class AuratAgent(BaseAgent):
             try:
                 if self.cloak_browser:
                     await self.cloak_browser.close()
-            except Exception:
-                pass
-            try:
-                import httpx
-
-                async with httpx.AsyncClient() as client:
-                    await client.get(
-                        "http://127.0.0.1:18733/detach-agent-view", timeout=5.0
-                    )
             except Exception:
                 pass
 
