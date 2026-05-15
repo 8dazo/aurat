@@ -25,5 +25,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   browser: {
     getCdpPort: () => ipcRenderer.invoke('browser:getCdpPort'),
+    attachUrl: (url: string) => ipcRenderer.invoke('browser:attach', url),
+    detach: () => ipcRenderer.invoke('browser:detach'),
   },
 })

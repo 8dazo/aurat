@@ -21,6 +21,8 @@ declare global {
       }
       browser: {
         getCdpPort: () => Promise<number>
+        attachUrl: (url: string) => Promise<{ status: string; error?: string }>
+        detach: () => Promise<{ status: string }>
       }
     }
   }

@@ -1,35 +1,31 @@
 """
 aurat_agent.py — Browser-use orchestrator for auto-apply.
 
-Connects browser-use to Electron's built-in Chromium via CDP so the
+Connects browser-use to Electron's Chromium via CDP so the
 browser preview shows the agent working live inside the app.
-Uses CloakBrowser's stealth Chromium binary for anti-detection,
-connecting to it via CDP (like the stapply pattern).
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
-import socket
-import subprocess
-import tempfile
-from typing import Optional
 
-import httpx
 from browser_use import Agent, Browser, BrowserConfig
+from playwright.async_api import async_playwright
 
 from agents.base import BaseAgent
 from agents.detector import detect_ats_platform_url
 from llm.openrouter import get_agent_llm
+from utils.stealth import (
+    attach_agent_view,
+    detach_agent_view,
+    get_electron_cdp_url,
+)
 
 logger = logging.getLogger(__name__)
 
 _MEMORY = None
-
-CDP_PORT = int(os.environ.get("AURAT_CDP_PORT", "9222"))
 
 
 def _get_memory():
@@ -42,63 +38,6 @@ def _get_memory():
         except ImportError:
             _MEMORY = None
     return _MEMORY
-
-
-def _find_available_port(start_port: int = 9222) -> int:
-    """Find an available port starting from start_port."""
-    for port in range(start_port, start_port + 100):
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(("127.0.0.1", port))
-                return port
-        except OSError:
-            continue
-    raise RuntimeError("No available ports found for Chrome debugging")
-
-
-def _get_stealth_binary_path() -> str:
-    """Get CloakBrowser's stealth Chromium binary path."""
-    from cloakbrowser import ensure_binary
-
-    return ensure_binary()
-
-
-def _get_stealth_args() -> list[str]:
-    """Get CloakBrowser's default stealth fingerprint args."""
-    from cloakbrowser import get_default_stealth_args
-
-    return get_default_stealth_args()
-
-
-def _inject_stealth_js() -> str:
-    """Return stealth JS to inject into every page (replaces the old stealth.py)."""
-    return """
-// Remove navigator.webdriver
-Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-
-// Mock chrome.runtime
-if (!window.chrome) {
-    window.chrome = { runtime: {} };
-}
-
-// Override permissions.query
-const originalQuery = window.navigator.permissions.query.bind(window.navigator.permissions);
-window.navigator.permissions.query = (parameters) => (
-    parameters.name === 'notifications'
-        ? Promise.resolve({ state: Notification.permission })
-        : originalQuery(parameters)
-);
-
-// Mock plugins
-Object.defineProperty(navigator, 'plugins', {
-    get: () => [1, 2, 3, 4, 5],
-});
-
-// Mock languages
-Object.defineProperty(navigator, 'languages', {
-    get: () => ['en-US', 'en'],
-});
-"""
 
 
 _ATS_CONTEXT = {
@@ -208,129 +147,62 @@ If you encounter a custom question you cannot answer from the profile, type "PAU
 Complete the entire application process end-to-end."""
 
 
-_CLOAK_HEADLESS = os.environ.get("AURAT_HEADLESS", "true").lower() in (
-    "true",
-    "1",
-    "yes",
-)
+async def _navigate_agent_page(cdp_url: str, job_url: str) -> None:
+    """Use Playwright to find and navigate the agent WebContentsView to the job URL.
+
+    This ensures browser-use connects to the correct page (the agent view)
+    instead of the main Electron UI page.
+    """
+    pw = await async_playwright().start()
+    try:
+        browser = await pw.chromium.connect_over_cdp(cdp_url)
+        contexts = browser.contexts
+        if not contexts:
+            raise RuntimeError("No browser contexts found in Electron")
+
+        ctx = contexts[0]
+        # Find the agent page (the one that's NOT the main UI)
+        pages = ctx.pages
+        agent_page = None
+        for p in pages:
+            url = p.url or ""
+            if "localhost:3000" not in url and "127.0.0.1:3000" not in url:
+                agent_page = p
+                break
+
+        if agent_page is None:
+            # Fallback: create a new page
+            agent_page = await ctx.new_page()
+
+        logger.info("Navigating agent page from %s to %s", agent_page.url, job_url)
+        try:
+            await agent_page.goto(job_url, wait_until="domcontentloaded", timeout=30000)
+        except Exception as e:
+            err_str = str(e)
+            if "ERR_ABORTED" in err_str or "net::" in err_str:
+                await agent_page.wait_for_timeout(3000)
+                if agent_page.url and agent_page.url not in ("about:blank", ""):
+                    try:
+                        await agent_page.wait_for_load_state(
+                            "domcontentloaded", timeout=15000
+                        )
+                    except Exception:
+                        pass
+            else:
+                raise
+
+        logger.info("Agent page now at: %s", agent_page.url)
+    finally:
+        await pw.stop()
 
 
 class AuratAgent(BaseAgent):
     def __init__(self, profile: dict):
         super().__init__(profile)
-        self.chrome_process: subprocess.Popen | None = None
-        self.cdp_port: int = CDP_PORT
-        self.user_data_dir: str | None = None
-        self._agent_task: asyncio.Task | None = None
         self.ats_type: str = "generic"
 
-    async def _start_stealth_chrome(self) -> int:
-        """Launch CloakBrowser's stealth Chromium with CDP.
-
-        Returns the CDP port number.
-        """
-        port = _find_available_port(self.cdp_port)
-        self.cdp_port = port
-
-        # Kill existing Chrome on this port
-        try:
-            result = subprocess.run(
-                ["ps", "aux"], capture_output=True, text=True, timeout=5
-            )
-            for line in result.stdout.split("\n"):
-                if f"remote-debugging-port={port}" in line and "Chrom" in line:
-                    parts = line.split()
-                    if len(parts) > 1:
-                        try:
-                            subprocess.run(
-                                ["kill", str(int(parts[1]))],
-                                capture_output=True,
-                                timeout=3,
-                            )
-                        except (ValueError, subprocess.TimeoutExpired):
-                            pass
-            await asyncio.sleep(1)
-        except Exception:
-            pass
-
-        binary_path = _get_stealth_binary_path()
-        stealth_args = _get_stealth_args()
-        self.user_data_dir = tempfile.mkdtemp(prefix="aurat_chrome_")
-
-        cmd = [
-            binary_path,
-            f"--remote-debugging-port={port}",
-            "--remote-allow-origins=*",
-            f"--user-data-dir={self.user_data_dir}",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-extensions",
-            "--window-size=1280,900",
-            "--force-device-scale-factor=1",
-            "--disable-dev-shm-usage",
-        ]
-
-        if _CLOAK_HEADLESS:
-            cmd.append("--headless=new")
-
-        cmd.extend(stealth_args)
-        cmd.append("about:blank")
-
-        logger.info("Launching stealth Chrome on CDP port %d", port)
-
-        self.chrome_process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-        # Wait for CDP to be ready
-        for attempt in range(30):
-            try:
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(
-                        f"http://127.0.0.1:{port}/json/version",
-                        timeout=httpx.Timeout(timeout=2.0),
-                    )
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        logger.info(
-                            "Chrome CDP ready on port %d: %s",
-                            port,
-                            data.get("Browser", "unknown"),
-                        )
-                        return port
-            except (httpx.ConnectError, httpx.TimeoutException):
-                await asyncio.sleep(1)
-
-        if self.chrome_process.poll() is not None:
-            raise RuntimeError(
-                f"Chrome process exited with code {self.chrome_process.returncode}"
-            )
-
-        raise RuntimeError(f"Chrome CDP not ready on port {port} after 30s")
-
-    async def _stop_stealth_chrome(self):
-        """Terminate Chrome and clean up."""
-        if self.chrome_process and self.chrome_process.poll() is None:
-            self.chrome_process.terminate()
-            try:
-                self.chrome_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.chrome_process.kill()
-            self.chrome_process = None
-
-        if self.user_data_dir:
-            try:
-                import shutil
-
-                shutil.rmtree(self.user_data_dir, ignore_errors=True)
-                self.user_data_dir = None
-            except Exception:
-                pass
-
     async def run(self, page=None):
-        """Launch stealth Chrome, connect browser-use via CDP, and run the application."""
+        """Connect to Electron's Chromium via CDP and run the application."""
         job_url = self.profile.get("_current_job_url", "")
         if not job_url:
             self.log_step("navigate", "error", "No job URL provided")
@@ -339,34 +211,43 @@ class AuratAgent(BaseAgent):
             await manager.broadcast_status("Idle")
             return
 
-        self.log_step("navigate", "running", "Launching stealth browser...")
+        self.log_step("navigate", "running", "Connecting to browser...")
         from api.ws import manager
 
         await manager.broadcast_status("Running")
 
-        # 1. Start stealth Chrome with CDP
+        # 1. Ask Electron to create/reuse a WebContentsView for the agent
         try:
-            port = await self._start_stealth_chrome()
+            await attach_agent_view()
         except Exception as e:
-            logger.exception("Failed to start stealth Chrome: %s", e)
-            self.log_step("navigate", "error", f"Browser launch failed: {e}")
+            logger.warning("Could not attach agent view (may already exist): %s", e)
+
+        # 2. Get CDP WebSocket URL from Electron (with retry)
+        try:
+            cdp_url = await get_electron_cdp_url()
+        except Exception as e:
+            logger.exception("Failed to get Electron CDP URL: %s", e)
+            await manager.broadcast_log("browser", "error", f"electron_cdp_failed: {e}")
             await manager.broadcast_status("Idle")
             return
 
-        # 2. Start screencast streaming so frontend shows the agent's browser
-        from api.screencast import screencast_manager
-
-        screencast_manager.cdp_port = port
-        await screencast_manager.start()
-        from api.ws import manager as ws_manager
-
-        await ws_manager.start_screencast_broadcast()
-
-        cdp_url = f"http://127.0.0.1:{port}"
-
+        # 3. Navigate the agent WebContentsView to the job URL before browser-use connects
+        #    This ensures browser-use finds and operates on the correct page.
         try:
-            # 3. Connect browser-use to Chrome via CDP
-            browser = Browser(config=BrowserConfig(cdp_url=cdp_url))
+            await _navigate_agent_page(cdp_url, job_url)
+        except Exception as e:
+            logger.warning("Pre-navigation failed (browser-use will handle it): %s", e)
+
+        # 4. Connect browser-use to Electron's Chromium via CDP
+        await manager.broadcast_log("browser", "navigated", f"page_url={job_url}")
+        cdp_port = os.environ.get("ELECTRON_CDP_PORT", "9222")
+        browser = None
+        try:
+            browser = Browser(
+                config=BrowserConfig(
+                    cdp_url=f"http://127.0.0.1:{cdp_port}",
+                )
+            )
 
             ats_type = self.profile.get("_current_ats_type", "") or self.ats_type
             if not ats_type or ats_type == "generic":
@@ -375,9 +256,6 @@ class AuratAgent(BaseAgent):
             self.log_step("detect", "completed", f"platform={ats_type}")
 
             task_prompt = _build_task_prompt(job_url, self.profile, ats_type)
-
-            # Broadcast job URL so Electron preview can navigate
-            await manager.broadcast_log("browser", "navigated", f"page_url={job_url}")
 
             llm = get_agent_llm()
 
@@ -426,12 +304,15 @@ class AuratAgent(BaseAgent):
             self.log_step("agent", "error", str(e))
             await manager.broadcast_status("Idle")
         finally:
-            from api.screencast import screencast_manager
-            from api.ws import manager as ws_manager
-
-            await ws_manager.stop_screencast_broadcast()
-            await screencast_manager.stop()
-            await self._stop_stealth_chrome()
+            try:
+                if browser:
+                    await browser.close()
+            except Exception:
+                pass
+            try:
+                await detach_agent_view()
+            except Exception:
+                pass
 
     async def _enrich_profile(self):
         try:
