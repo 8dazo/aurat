@@ -20,8 +20,7 @@ declare global {
         isPackaged: () => boolean
       }
       browser: {
-        attachUrl: (url: string) => Promise<{ status: string; error?: string }>
-        detach: () => Promise<{ status: string }>
+        getCdpPort: () => Promise<number>
       }
     }
   }

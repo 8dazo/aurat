@@ -79,17 +79,11 @@ export const electronAPI = {
     },
   },
   browser: {
-    attachUrl: async (url: string): Promise<{ status: string; error?: string }> => {
-      if (typeof window !== 'undefined' && window.electronAPI?.browser?.attachUrl) {
-        return window.electronAPI.browser.attachUrl(url)
+    getCdpPort: async (): Promise<number> => {
+      if (typeof window !== 'undefined' && window.electronAPI?.browser?.getCdpPort) {
+        return window.electronAPI.browser.getCdpPort()
       }
-      return { status: 'unavailable' }
-    },
-    detach: async (): Promise<{ status: string }> => {
-      if (typeof window !== 'undefined' && window.electronAPI?.browser?.detach) {
-        return window.electronAPI.browser.detach()
-      }
-      return { status: 'unavailable' }
+      return 9222
     },
   },
 }

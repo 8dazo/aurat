@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { STAGE_ICONS, STATUS_COLORS } from "@/lib/constants"
 import { electronAPI } from "@/lib/electron-api"
 
 interface StepLog {
@@ -39,16 +40,7 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   failed:    { label: "Failed",    className: "bg-red-500/20 text-red-400 border-red-500/30" },
 }
 
-const STAGE_ICONS: Record<string, string> = {
-  navigate: "🧭", detect: "🔍", click_apply: "🖱️",
-  detect_fields: "📋", map_fields: "🧠", fill_fields: "✍️",
-  review: "👁️", submit: "📤", done: "✅",
-}
 
-const STATUS_COLORS: Record<string, string> = {
-  running: "text-blue-400", completed: "text-green-400",
-  paused: "text-orange-400", skipped: "text-muted-foreground", error: "text-destructive",
-}
 
 function parseJson<T>(val: string | T, fallback: T): T {
   if (typeof val === "string") {

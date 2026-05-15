@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { useAgentWs, type AgentStatus } from "@/lib/use-agent-ws"
+import { useAgentWs } from "@/lib/use-agent-ws"
+import { type AgentStatus, STAGE_ICONS, STATUS_COLORS, type DetectResult } from "@/lib/constants"
 import { electronAPI } from "@/lib/electron-api"
 import { toast } from "sonner"
 import { ResumeInApply } from "@/components/ResumeInApply"
@@ -27,32 +28,6 @@ const STATUS_CONFIG: Record<AgentStatus, { label: string; dot: string; badge: st
     dot: "bg-orange-400 animate-pulse",
     badge: "bg-orange-500/15 text-orange-400 border-orange-500/25",
   },
-}
-
-const STAGE_ICONS: Record<string, string> = {
-  navigate: "🧭",
-  detect: "🔍",
-  click_apply: "🖱️",
-  detect_fields: "📋",
-  map_fields: "🧠",
-  fill_fields: "✍️",
-  review: "👁️",
-  submit: "📤",
-  done: "✅",
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  running: "text-blue-400",
-  completed: "text-green-400",
-  paused: "text-orange-400",
-  skipped: "text-muted-foreground",
-  error: "text-destructive",
-}
-
-interface DetectResult {
-  platform: string
-  page_type: "description_only" | "form" | "multi_step"
-  visible_field_count: number
 }
 
 interface ControlPanelProps {

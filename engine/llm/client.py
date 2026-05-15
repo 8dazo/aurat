@@ -1,87 +1,43 @@
-from ollama import Client
-from pydantic import BaseModel
-import os, json, asyncio
+"""
+llm/client.py — LLM client backed by OpenRouter.
 
-CLOUD_MODEL = os.environ.get("OLLAMA_CLOUD_MODEL", "gpt-oss:120b")
-LOCAL_MODEL = os.environ.get("OLLAMA_LOCAL_MODEL", "gpt-oss")
+Replaces the Ollama local+cloud client.
+Preserves the extract_structured() and complete() interfaces
+used by memory, profile builder, and JD analyzer.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Optional
+
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    def __init__(self):
-        api_key = os.environ.get("OLLAMA_API_KEY", "")
-        self.cloud = Client(
-            host="https://ollama.com",
-            headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
-        )
-        self.local = Client(host="http://localhost:11434")
-        self._local_available = None
+    """LLM client backed by OpenRouter via the llm.openrouter module."""
 
-    async def _check_local(self) -> bool:
-        if self._local_available is not None:
-            return self._local_available
-        try:
-            self.local.list()
-            self._local_available = True
-        except Exception:
-            self._local_available = False
-        return self._local_available
+    def __init__(self):
+        from llm.openrouter import get_llm
+
+        self._get_llm = get_llm
 
     async def extract_structured(
-        self, prompt: str, schema: type[BaseModel], text: str
+        self,
+        prompt: str,
+        schema: type[BaseModel],
+        text: str = "",
+        model: Optional[str] = None,
     ) -> BaseModel:
-        if await self._check_local():
-            try:
-                resp = await asyncio.to_thread(
-                    self.local.chat,
-                    model=LOCAL_MODEL,
-                    messages=[{"role": "user", "content": f"{prompt}\n\n{text}"}],
-                    format=schema.model_json_schema(),
-                    options={"temperature": 0},
-                )
-                return schema.model_validate_json(resp.message.content)
-            except Exception:
-                self._local_available = False
+        from llm.openrouter import extract_structured
 
-        schema_json = json.dumps(schema.model_json_schema(), indent=2)
-        cloud_prompt = (
-            f"{prompt}\n\n"
-            f"Respond with ONLY valid JSON matching this schema. No markdown fences.\n"
-            f"Schema:\n{schema_json}\n\n"
-            f"Text:\n{text}"
-        )
-        resp = await asyncio.to_thread(
-            self.cloud.chat,
-            model=CLOUD_MODEL,
-            messages=[{"role": "user", "content": cloud_prompt}],
-        )
-        raw = resp.message.content
-        if "```json" in raw:
-            json_str = raw.split("```json")[-1].split("```")[0]
-        elif "```" in raw:
-            json_str = raw.split("```")[1].split("```")[0]
-        else:
-            json_str = raw
-        return schema.model_validate_json(json_str.strip())
+        return await extract_structured(prompt, schema, text, model=model)
 
-    async def complete(self, prompt: str, max_tokens: int = 200) -> str:
-        """Plain text completion — used by the memory reranker."""
-        if await self._check_local():
-            try:
-                resp = await asyncio.to_thread(
-                    self.local.chat,
-                    model=LOCAL_MODEL,
-                    messages=[{"role": "user", "content": prompt}],
-                    options={"temperature": 0, "num_predict": max_tokens},
-                )
-                return resp.message.content or ""
-            except Exception:
-                self._local_available = False
+    async def complete(
+        self, prompt: str, max_tokens: int = 200, model: Optional[str] = None
+    ) -> str:
+        from llm.openrouter import complete
 
-        resp = await asyncio.to_thread(
-            self.cloud.chat,
-            model=CLOUD_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            options={"num_predict": max_tokens},
-        )
-        return resp.message.content or ""
-
+        return await complete(prompt, max_tokens=max_tokens, model=model)
