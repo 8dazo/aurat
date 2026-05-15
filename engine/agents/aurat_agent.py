@@ -329,26 +329,6 @@ class AuratAgent(BaseAgent):
             except Exception:
                 pass
 
-    async def _notify_electron_attach(self):
-        try:
-            async with httpx.AsyncClient() as client:
-                await client.get(
-                    "http://127.0.0.1:18733/attach-agent-view",
-                    timeout=httpx.Timeout(timeout=15.0),
-                )
-        except Exception:
-            pass
-
-    async def _notify_electron_detach(self):
-        try:
-            async with httpx.AsyncClient() as client:
-                await client.get(
-                    "http://127.0.0.1:18733/detach-agent-view",
-                    timeout=httpx.Timeout(timeout=5.0),
-                )
-        except Exception:
-            pass
-
     async def run(self, page=None):
         """Launch stealth Chrome, connect browser-use via CDP, and run the application."""
         job_url = self.profile.get("_current_job_url", "")
@@ -373,8 +353,14 @@ class AuratAgent(BaseAgent):
             await manager.broadcast_status("Idle")
             return
 
-        # 2. Tell Electron to show the browser preview
-        await self._notify_electron_attach()
+        # 2. Start screencast streaming so frontend shows the agent's browser
+        from api.screencast import screencast_manager
+
+        screencast_manager.cdp_port = port
+        await screencast_manager.start()
+        from api.ws import manager as ws_manager
+
+        await ws_manager.start_screencast_broadcast()
 
         cdp_url = f"http://127.0.0.1:{port}"
 
@@ -440,7 +426,11 @@ class AuratAgent(BaseAgent):
             self.log_step("agent", "error", str(e))
             await manager.broadcast_status("Idle")
         finally:
-            await self._notify_electron_detach()
+            from api.screencast import screencast_manager
+            from api.ws import manager as ws_manager
+
+            await ws_manager.stop_screencast_broadcast()
+            await screencast_manager.stop()
             await self._stop_stealth_chrome()
 
     async def _enrich_profile(self):

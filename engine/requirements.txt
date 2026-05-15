@@ -12,3 +12,4 @@ httpx==0.28.0
 rank-bm25==0.2.2
 sentence-transformers==3.4.1
 numpy>=1.26.0
+websockets>=12.0

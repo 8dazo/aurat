@@ -238,6 +238,18 @@ async def handle_event(body: dict):
     return {"status": "ok", "event": event}
 
 
+@router.post("/screencast/start")
+async def start_screencast():
+    await manager.start_screencast_broadcast()
+    return {"status": "started"}
+
+
+@router.post("/screencast/stop")
+async def stop_screencast():
+    await manager.stop_screencast_broadcast()
+    return {"status": "stopped"}
+
+
 @router.post("/apply/detect")
 async def detect_apply_page(body: dict):
     """
@@ -533,5 +545,11 @@ async def logs_ws(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
+            try:
+                msg = json.loads(data)
+                if msg.get("type") == "input":
+                    await manager.handle_input_event(msg)
+            except (json.JSONDecodeError, KeyError):
+                pass
     except WebSocketDisconnect:
         await manager.disconnect_log(websocket)
