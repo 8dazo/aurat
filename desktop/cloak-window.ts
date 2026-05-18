@@ -82,4 +82,67 @@ export function requestAccessibilityPermission(): boolean {
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+export async function findWindowByPID(pid: number, maxRetries = 10): Promise<AXWindowRef | null> {
+  for (let i = 0; i < maxRetries; i++) {
+    const appElement = AXUIElementCreateApplication(pid)
+    if (!appElement) {
+      await sleep(500)
+      continue
+    }
+
+    const windowsOut = [null]
+    const err = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttr, windowsOut)
+
+    if (err !== kAXErrorSuccess) {
+      CFRelease(appElement)
+      if (err === kAXErrorCannotComplete) {
+        await sleep(500)
+        continue
+      }
+      if (err === kAXErrorAPIDisabled) {
+        console.error('[cloak-window] Accessibility API disabled. Grant permission in System Preferences > Privacy & Security > Accessibility')
+        return null
+      }
+      await sleep(500)
+      continue
+    }
+
+    const windowsArray = windowsOut[0]
+    if (!windowsArray) {
+      CFRelease(appElement)
+      await sleep(500)
+      continue
+    }
+
+    const count = CFArrayGetCount(windowsArray)
+    let foundWindow: AXWindowRef | null = null
+
+    for (let j = 0; j < count; j++) {
+      const windowElement = CFArrayGetValueAtIndex(windowsArray, j)
+
+      const roleOut = [null]
+      const roleErr = AXUIElementCopyAttributeValue(windowElement, kAXRoleAttr, roleOut)
+
+      if (roleErr === kAXErrorSuccess && roleOut[0]) {
+        CFRelease(roleOut[0])
+        foundWindow = { element: windowElement, pid, windowIndex: j }
+        break
+      }
+    }
+
+    CFRelease(windowsArray)
+    CFRelease(appElement)
+
+    if (foundWindow) return foundWindow
+    await sleep(500)
+  }
+
+  console.error(`[cloak-window] Could not find window for PID ${pid} after ${maxRetries} retries`)
+  return null
+}
+
 export { TITLE_BAR_HEIGHT_PT, OFFSCREEN_X, PANEL_WIDTH, kAXErrorAPIDisabled, kAXErrorCannotComplete, kAXErrorInvalidUIElement }
