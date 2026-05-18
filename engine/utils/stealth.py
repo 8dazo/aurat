@@ -81,6 +81,9 @@ async def launch_cloakbrowser(job_url: str) -> dict:
 
 
 def _get_chromium_main_pid() -> int | None:
+    from cloakbrowser import binary_info
+
+    cloak_path = binary_info().get("binary_path", "")
     proc = subprocess.run(["ps", "aux"], capture_output=True, text=True)
     for line in proc.stdout.split("\n"):
         if (
@@ -88,6 +91,7 @@ def _get_chromium_main_pid() -> int | None:
             and "--type=" not in line
             and "grep" not in line
             and "python" not in line
+            and (not cloak_path or cloak_path in line)
         ):
             try:
                 return int(line.split()[1])
@@ -97,13 +101,25 @@ def _get_chromium_main_pid() -> int | None:
 
 
 async def _attach_external_view(pid: int, cdp_url: str) -> None:
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"http://127.0.0.1:{ELECTRON_INFO_PORT}/attach-external-view",
-            json={"pid": pid, "cdp_url": cdp_url},
-            timeout=httpx.Timeout(timeout=15.0),
-        )
-        logger.info("attach-external-view response: %s %s", resp.status_code, resp.text)
+    for attempt in range(1, 6):
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"http://127.0.0.1:{ELECTRON_INFO_PORT}/attach-external-view",
+                    json={"pid": pid, "cdp_url": cdp_url},
+                    timeout=httpx.Timeout(timeout=15.0),
+                )
+                data = resp.json()
+                if data.get("status") == "attached":
+                    logger.info("attach-external-view: attached (attempt %d)", attempt)
+                    return
+                logger.warning(
+                    "attach-external-view attempt %d: %s", attempt, resp.text
+                )
+        except Exception as e:
+            logger.warning("attach-external-view attempt %d failed: %s", attempt, e)
+        await asyncio.sleep(1.0)
+    logger.error("attach-external-view failed after 5 attempts")
 
 
 async def detach_external_view() -> None:
