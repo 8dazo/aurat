@@ -11,6 +11,7 @@ const kAXValueTypeCGRect = 3
 const kAXErrorSuccess = 0
 const kAXErrorAPIDisabled = -25211
 const kAXErrorCannotComplete = -25204
+const kAXErrorNotImplemented = -25208
 const kAXErrorInvalidUIElement = -25202
 
 const appServices = koffi.load('/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices')
@@ -25,7 +26,11 @@ const CFTypeRef = koffi.pointer('CFTypeRef', koffi.opaque())
 const CFDictionaryRef = koffi.pointer('CFDictionaryRef', koffi.opaque())
 const CFBooleanRef = koffi.pointer('CFBooleanRef', koffi.opaque())
 const CFArrayRef = koffi.pointer('CFArrayRef', koffi.opaque())
+const AXValueRef = koffi.pointer('AXValueRef', koffi.opaque())
 
+const kCFStringEncodingUTF8 = 0x08000100
+
+const CFStringCreateWithCString = coreFoundation.func('CFStringRef CFStringCreateWithCString(void *alloc, const char *cStr, uint32_t encoding)')
 const AXUIElementCreateApplication = appServices.func('AXUIElementRef AXUIElementCreateApplication(int32_t pid)')
 const AXUIElementCopyAttributeValue = appServices.func('int32_t AXUIElementCopyAttributeValue(AXUIElementRef element, CFStringRef attribute, _Out_ CFTypeRef *value)')
 const AXUIElementSetAttributeValue = appServices.func('int32_t AXUIElementSetAttributeValue(AXUIElementRef element, CFStringRef attribute, CFTypeRef value)')
@@ -37,15 +42,20 @@ const CFRelease = coreFoundation.func('void CFRelease(CFTypeRef cf)')
 const CFArrayGetCount = coreFoundation.func('int64_t CFArrayGetCount(CFArrayRef array)')
 const CFArrayGetValueAtIndex = coreFoundation.func('void *CFArrayGetValueAtIndex(CFArrayRef array, int64_t index)')
 
-const kAXPositionAttr = koffi.decode(appServices.symbol('kAXPositionAttribute', CFStringRef), CFStringRef)
-const kAXSizeAttr = koffi.decode(appServices.symbol('kAXSizeAttribute', CFStringRef), CFStringRef)
-const kAXWindowsAttr = koffi.decode(appServices.symbol('kAXWindowsAttribute', CFStringRef), CFStringRef)
-const kAXRoleAttr = koffi.decode(appServices.symbol('kAXRoleAttribute', CFStringRef), CFStringRef)
-const kAXTitleAttr = koffi.decode(appServices.symbol('kAXTitleAttribute', CFStringRef), CFStringRef)
-const kAXMinimizedAttr = koffi.decode(appServices.symbol('kAXMinimizedAttribute', CFStringRef), CFStringRef)
-const kAXRaiseActionStr = koffi.decode(appServices.symbol('kAXRaiseAction', CFStringRef), CFStringRef)
-const kAXTrustedCheckOptionPromptStr = koffi.decode(coreFoundation.symbol('kAXTrustedCheckOptionPrompt', CFStringRef), CFStringRef)
+function cfstr(s: string) {
+  return CFStringCreateWithCString(null, s, kCFStringEncodingUTF8)
+}
+
+const kAXPositionAttr = cfstr('AXPosition')
+const kAXSizeAttr = cfstr('AXSize')
+const kAXWindowsAttr = cfstr('AXWindows')
+const kAXRoleAttr = cfstr('AXRole')
+const kAXTitleAttr = cfstr('AXTitle')
+const kAXMinimizedAttr = cfstr('AXMinimized')
+const kAXRaiseActionStr = cfstr('AXRaise')
+const kAXTrustedCheckOptionPromptStr = cfstr('TrustedCheckOptionPrompt')
 const kCFBooleanTrue = koffi.decode(coreFoundation.symbol('kCFBooleanTrue', CFBooleanRef), CFBooleanRef)
+const kCFBooleanFalse = koffi.decode(coreFoundation.symbol('kCFBooleanFalse', CFBooleanRef), CFBooleanRef)
 
 export interface AXWindowRef {
   element: unknown
@@ -86,25 +96,41 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-export async function findWindowByPID(pid: number, maxRetries = 10): Promise<AXWindowRef | null> {
+export async function findWindowByPID(pid: number, maxRetries = 20): Promise<AXWindowRef | null> {
   for (let i = 0; i < maxRetries; i++) {
-    const appElement = AXUIElementCreateApplication(pid)
+    let appElement: unknown = null
+    try {
+      appElement = AXUIElementCreateApplication(pid)
+    } catch {
+      console.error(`[cloak-window] findWindow retry ${i + 1}/${maxRetries}: CreateApplication threw`)
+      await sleep(500)
+      continue
+    }
     if (!appElement) {
+      console.error(`[cloak-window] findWindow retry ${i + 1}/${maxRetries}: appElement is null`)
       await sleep(500)
       continue
     }
 
     const windowsOut = [null]
-    const err = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttr, windowsOut)
+    let err: number
+    try {
+      err = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttr, windowsOut)
+    } catch (e) {
+      console.error(`[cloak-window] findWindow retry ${i + 1}/${maxRetries}: CopyAttributeValue threw:`, e)
+      await sleep(500)
+      continue
+    }
 
     if (err !== kAXErrorSuccess) {
-      CFRelease(appElement)
-      if (err === kAXErrorCannotComplete) {
+      try { CFRelease(appElement) } catch {}
+      console.error(`[cloak-window] findWindow retry ${i + 1}/${maxRetries}: AXWindows error=${err}`)
+      if (err === kAXErrorCannotComplete || err === kAXErrorNotImplemented) {
         await sleep(500)
         continue
       }
       if (err === kAXErrorAPIDisabled) {
-        console.error('[cloak-window] Accessibility API disabled. Grant permission in System Preferences > Privacy & Security > Accessibility')
+        console.error('[cloak-window] Accessibility API disabled')
         return null
       }
       await sleep(500)
@@ -113,7 +139,7 @@ export async function findWindowByPID(pid: number, maxRetries = 10): Promise<AXW
 
     const windowsArray = windowsOut[0]
     if (!windowsArray) {
-      CFRelease(appElement)
+      try { CFRelease(appElement) } catch {}
       await sleep(500)
       continue
     }
@@ -125,19 +151,28 @@ export async function findWindowByPID(pid: number, maxRetries = 10): Promise<AXW
       const windowElement = CFArrayGetValueAtIndex(windowsArray, j)
 
       const roleOut = [null]
-      const roleErr = AXUIElementCopyAttributeValue(windowElement, kAXRoleAttr, roleOut)
-
-      if (roleErr === kAXErrorSuccess && roleOut[0]) {
-        CFRelease(roleOut[0])
-        foundWindow = { element: windowElement, pid, windowIndex: j }
-        break
+      try {
+        const roleErr = AXUIElementCopyAttributeValue(windowElement, kAXRoleAttr, roleOut)
+        if (roleErr === kAXErrorSuccess && roleOut[0]) {
+          CFRelease(roleOut[0])
+          foundWindow = { element: windowElement, pid, windowIndex: j }
+          break
+        }
+        if (roleOut[0]) CFRelease(roleOut[0])
+      } catch {
+        if (roleOut[0]) try { CFRelease(roleOut[0]) } catch {}
       }
+    }
+
+    if (foundWindow) {
+      retainedAppElement = appElement
+      retainedWindowsArray = windowsArray
+      return foundWindow
     }
 
     CFRelease(windowsArray)
     CFRelease(appElement)
 
-    if (foundWindow) return foundWindow
     await sleep(500)
   }
 
@@ -146,40 +181,53 @@ export async function findWindowByPID(pid: number, maxRetries = 10): Promise<AXW
 }
 
 export function setPositionAndSize(window: AXWindowRef, x: number, y: number, w: number, h: number): number {
-  const posValue = AXValueCreate(kAXValueTypeCGPoint, koffi.as({ x, y }, 'CGPoint *'))
-  if (!posValue) return -1
-  const posErr = AXUIElementSetAttributeValue(window.element, kAXPositionAttr, posValue)
-  CFRelease(posValue)
+  let posErr = -1
+  try {
+    const posValue = AXValueCreate(kAXValueTypeCGPoint, koffi.as({ x, y }, 'CGPoint *'))
+    if (posValue) {
+      posErr = AXUIElementSetAttributeValue(window.element, kAXPositionAttr, posValue)
+      CFRelease(posValue)
+    }
+  } catch {}
 
-  const sizeValue = AXValueCreate(kAXValueTypeCGSize, koffi.as({ width: w, height: h }, 'CGSize *'))
-  if (!sizeValue) {
-    return posErr || -1
-  }
-  const sizeErr = AXUIElementSetAttributeValue(window.element, kAXSizeAttr, sizeValue)
-  CFRelease(sizeValue)
+  let sizeErr = -1
+  try {
+    const sizeValue = AXValueCreate(kAXValueTypeCGSize, koffi.as({ width: w, height: h }, 'CGSize *'))
+    if (sizeValue) {
+      sizeErr = AXUIElementSetAttributeValue(window.element, kAXSizeAttr, sizeValue)
+      CFRelease(sizeValue)
+    }
+  } catch {}
 
   return posErr || sizeErr
 }
 
 export function raiseWindow(window: AXWindowRef): number {
-  return AXUIElementPerformAction(window.element, kAXRaiseActionStr)
+  try {
+    return AXUIElementPerformAction(window.element, kAXRaiseActionStr)
+  } catch { return -1 }
 }
 
 export function minimizeWindow(window: AXWindowRef): number {
-  const kCFBooleanTrueLocal = koffi.decode(coreFoundation.symbol('kCFBooleanTrue', CFBooleanRef), CFBooleanRef)
-  const err = AXUIElementSetAttributeValue(window.element, kAXMinimizedAttr, kCFBooleanTrueLocal)
-  return err
+  try {
+    return AXUIElementSetAttributeValue(window.element, kAXMinimizedAttr, kCFBooleanTrue)
+  } catch { return -1 }
 }
 
 export function unminimizeWindow(window: AXWindowRef): number {
-  const kCFBooleanFalseLocal = koffi.decode(coreFoundation.symbol('kCFBooleanFalse', CFBooleanRef), CFBooleanRef)
-  const err = AXUIElementSetAttributeValue(window.element, kAXMinimizedAttr, kCFBooleanFalseLocal)
-  return err
+  try {
+    return AXUIElementSetAttributeValue(window.element, kAXMinimizedAttr, kCFBooleanFalse)
+  } catch { return -1 }
 }
 
 let retainedAppElement: unknown = null
+let retainedWindowsArray: unknown = null
 
 export function dispose(): void {
+  if (retainedWindowsArray) {
+    try { CFRelease(retainedWindowsArray) } catch {}
+    retainedWindowsArray = null
+  }
   if (retainedAppElement) {
     try { CFRelease(retainedAppElement) } catch {}
     retainedAppElement = null
@@ -187,4 +235,4 @@ export function dispose(): void {
   cachedTrusted = null
 }
 
-export { TITLE_BAR_HEIGHT_PT, OFFSCREEN_X, PANEL_WIDTH, kAXErrorAPIDisabled, kAXErrorCannotComplete, kAXErrorInvalidUIElement }
+export { TITLE_BAR_HEIGHT_PT, OFFSCREEN_X, PANEL_WIDTH, kAXErrorAPIDisabled, kAXErrorCannotComplete, kAXErrorInvalidUIElement, kAXErrorNotImplemented }

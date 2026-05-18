@@ -188,6 +188,10 @@ function startInfoServer() {
     } else if (req.url === '/view-status') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ attached: cloakWindow !== null, cdp_url: cloakCDPUrl, pid: cloakPID }))
+    } else if (req.url === '/ax-check') {
+      const trusted = checkAccessibilityPermission()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ ax_trusted: trusted }))
     } else {
       res.writeHead(404)
       res.end()
