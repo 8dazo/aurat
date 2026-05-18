@@ -53,4 +53,33 @@ export interface AXWindowRef {
   windowIndex: number
 }
 
+const CFDictionaryCreate = coreFoundation.func('CFDictionaryRef CFDictionaryCreate(void *alloc, const void **keys, const void **values, int64_t count, void *keyCallbacks, void *valueCallbacks)')
+
+let cachedTrusted: boolean | null = null
+
+export function checkAccessibilityPermission(): boolean {
+  if (cachedTrusted !== null) return cachedTrusted
+  try {
+    const trusted = AXIsProcessTrusted()
+    cachedTrusted = trusted
+    return trusted
+  } catch {
+    return false
+  }
+}
+
+export function requestAccessibilityPermission(): boolean {
+  try {
+    const keys = [kAXTrustedCheckOptionPromptStr]
+    const values = [kCFBooleanTrue]
+    const options = CFDictionaryCreate(null, keys, values, 1, null, null)
+    const trusted = AXIsProcessTrustedWithOptions(options)
+    if (options) CFRelease(options)
+    cachedTrusted = trusted
+    return trusted
+  } catch {
+    return false
+  }
+}
+
 export { TITLE_BAR_HEIGHT_PT, OFFSCREEN_X, PANEL_WIDTH, kAXErrorAPIDisabled, kAXErrorCannotComplete, kAXErrorInvalidUIElement }
