@@ -15,6 +15,12 @@ export interface ElectronAPI {
     getPlatform(): string
     isPackaged(): boolean
   }
+  browser: {
+    getCdpPort(): Promise<number>
+    attachExternal(pid: number, cdpUrl: string): Promise<{ status: string; error?: string; cdp_url?: string }>
+    detachExternal(): Promise<{ status: string }>
+    getExternalStatus(): Promise<{ attached: boolean; cdpUrl: string | null; pid: number | null }>
+  }
 }
 
 declare global {
