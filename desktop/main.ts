@@ -1,9 +1,24 @@
-import { app, BrowserWindow, ipcMain, WebContentsView } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { spawn, ChildProcess } from 'child_process'
 import * as http from 'http'
 import * as path from 'path'
 import dotenv from 'dotenv'
 import { registerIpcHandlers } from './ipc-handlers'
+import {
+  checkAccessibilityPermission,
+  requestAccessibilityPermission,
+  findWindowByPID,
+  setPositionAndSize,
+  raiseWindow,
+  dispose as disposeCloakWindow,
+  AXWindowRef,
+  TITLE_BAR_HEIGHT_PT,
+  OFFSCREEN_X,
+  PANEL_WIDTH,
+  kAXErrorAPIDisabled,
+  kAXErrorCannotComplete,
+  kAXErrorInvalidUIElement,
+} from './cloak-window'
 
 dotenv.config({ path: path.join(__dirname, '..', '..', '.env') })
 
@@ -13,9 +28,11 @@ app.commandLine.appendSwitch('remote-debugging-port', String(AGENT_CDP_PORT))
 
 let mainWindow: BrowserWindow | null = null
 let pyProc: ChildProcess | null = null
-let browserView: WebContentsView | null = null
 let infoServer: http.Server | null = null
-let agentViewOwnedByEngine = false
+let cloakWindow: AXWindowRef | null = null
+let cloakPID: number | null = null
+let cloakCDPUrl: string | null = null
+let lastActivePosition: { x: number; y: number; w: number; h: number } | null = null
 
 function startPythonBackend(cdpPortNum: number) {
   const env = { ...process.env, PYTHONUNBUFFERED: '1', ELECTRON_CDP_PORT: String(cdpPortNum) }
@@ -50,37 +67,127 @@ async function waitForPython(): Promise<void> {
   console.error('[python] backend did not become ready in time')
 }
 
+function computeExternalFrame(): { x: number; y: number; w: number; h: number } {
+  if (!mainWindow) return { x: 0, y: 0, w: 400, h: 700 }
+  const bounds = mainWindow.getBounds()
+  const contentBounds = mainWindow.getContentBounds()
+  const x = bounds.x
+  const y = bounds.y
+  const w = Math.max(contentBounds.width - PANEL_WIDTH, 400)
+  const h = contentBounds.height + TITLE_BAR_HEIGHT_PT
+  return { x, y, w, h }
+}
+
+function onElectronWindowChange() {
+  if (!cloakWindow || !mainWindow) return
+  const frame = computeExternalFrame()
+  setPositionAndSize(cloakWindow, frame.x, frame.y, frame.w, frame.h)
+  lastActivePosition = frame
+}
+
+function onElectronFocus() {
+  if (!cloakWindow || !lastActivePosition) return
+  setPositionAndSize(cloakWindow, lastActivePosition.x, lastActivePosition.y, lastActivePosition.w, lastActivePosition.h)
+  raiseWindow(cloakWindow)
+}
+
+function onElectronBlur() {
+  if (!cloakWindow || !lastActivePosition) return
+  setPositionAndSize(cloakWindow, OFFSCREEN_X, lastActivePosition.y, lastActivePosition.w, lastActivePosition.h)
+}
+
+async function attachExternalView(pid: number, cdpUrl: string): Promise<{ status: string; error?: string; cdp_url?: string }> {
+  if (!mainWindow) {
+    return { status: 'error', error: 'No main window' }
+  }
+
+  if (!checkAccessibilityPermission()) {
+    requestAccessibilityPermission()
+    return { status: 'error', error: 'Accessibility permission required. Grant it in System Preferences > Privacy & Security > Accessibility and retry.' }
+  }
+
+  const windowRef = await findWindowByPID(pid, 10)
+  if (!windowRef) {
+    return { status: 'error', error: `Could not find window for PID ${pid}` }
+  }
+
+  detachExternalView()
+
+  cloakWindow = windowRef
+  cloakPID = pid
+  cloakCDPUrl = cdpUrl
+
+  const frame = computeExternalFrame()
+  setPositionAndSize(cloakWindow, frame.x, frame.y, frame.w, frame.h)
+  lastActivePosition = frame
+  raiseWindow(cloakWindow)
+
+  mainWindow.on('move', onElectronWindowChange)
+  mainWindow.on('resize', onElectronWindowChange)
+  mainWindow.on('focus', onElectronFocus)
+  mainWindow.on('blur', onElectronBlur)
+
+  return { status: 'attached', cdp_url: cdpUrl }
+}
+
+function detachExternalView(): { status: string } {
+  if (!mainWindow) {
+    return { status: 'ok' }
+  }
+
+  mainWindow.removeListener('move', onElectronWindowChange)
+  mainWindow.removeListener('resize', onElectronWindowChange)
+  mainWindow.removeListener('focus', onElectronFocus)
+  mainWindow.removeListener('blur', onElectronBlur)
+
+  if (cloakWindow) {
+    if (lastActivePosition) {
+      setPositionAndSize(cloakWindow, OFFSCREEN_X, lastActivePosition.y, lastActivePosition.w, lastActivePosition.h)
+    }
+    disposeCloakWindow()
+  }
+
+  cloakWindow = null
+  cloakPID = null
+  cloakCDPUrl = null
+  lastActivePosition = null
+
+  return { status: 'ok' }
+}
+
 function startInfoServer() {
   infoServer = http.createServer((req, res) => {
     if (req.url === '/cdp-info') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ cdp_port: AGENT_CDP_PORT }))
-    } else if (req.url === '/attach-agent-view') {
-      if (agentViewOwnedByEngine && browserView) {
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ status: 'ok', reused: true }))
-      } else {
-        attachBrowserView('about:blank').then((result) => {
-          agentViewOwnedByEngine = true
+    } else if (req.url === '/attach-external-view') {
+      let body = ''
+      req.on('data', (chunk) => { body += chunk })
+      req.on('end', async () => {
+        try {
+          const parsed = JSON.parse(body)
+          const pid = parsed.pid
+          const cdpUrl = parsed.cdp_url
+          if (!pid || !cdpUrl) {
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ status: 'error', error: 'Missing pid or cdp_url' }))
+            return
+          }
+          const result = await attachExternalView(pid, cdpUrl)
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify(result))
-        }).catch((e: unknown) => {
+        } catch (e: unknown) {
           res.writeHead(500, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ status: 'error', error: String(e) }))
-        })
-      }
-    } else if (req.url === '/detach-agent-view') {
-      detachBrowserView()
-      agentViewOwnedByEngine = false
+        }
+      })
+    } else if (req.url === '/detach-external-view') {
+      const result = detachExternalView()
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ status: 'ok' }))
-    } else if (req.url === '/freeze-view') {
-      agentViewOwnedByEngine = false
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ status: 'ok' }))
+      res.end(JSON.stringify(result))
     } else if (req.url === '/view-status') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ attached: browserView !== null, engineOwned: agentViewOwnedByEngine }))
+      res.end(JSON.stringify({ attached: cloakWindow !== null, cdp_url: cloakCDPUrl, pid: cloakPID }))
     } else {
       res.writeHead(404)
       res.end()
@@ -112,124 +219,27 @@ function createWindow() {
   }
 }
 
-function detachBrowserView() {
-  if (!browserView) return
-  agentViewOwnedByEngine = false
-  if (mainWindow) {
-    try {
-      mainWindow.contentView.removeChildView(browserView)
-    } catch {}
-  }
-  browserView = null
-}
-
-function resizeBrowserView() {
-  if (!browserView || !mainWindow) return
-  const { width, height } = mainWindow.getContentBounds()
-  // Leave 380px on the right for the control panel
-  const viewWidth = Math.max(width - 380, 400)
-  browserView.setBounds({ x: 0, y: 0, width: viewWidth, height })
-}
-
-async function attachBrowserView(url: string): Promise<{ status: string; error?: string }> {
-  if (!mainWindow) {
-    return { status: 'error', error: 'No main window' }
-  }
-
-  detachBrowserView()
-
-  browserView = new WebContentsView({
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-    },
-  })
-
-  const bv = browserView
-  bv.webContents.loadURL(url)
-
-  bv.webContents.setWindowOpenHandler(({ url: newUrl }) => {
-    bv.webContents.loadURL(newUrl)
-    return { action: 'deny' }
-  })
-
-  mainWindow.contentView.addChildView(bv)
-  resizeBrowserView()
-
-  const notifyCrash = () => {
-    const body = JSON.stringify({ event: 'view_crashed' })
-    const req = http.request(
-      { hostname: '127.0.0.1', port: 18732, path: '/event', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } },
-      () => {}
-    )
-    req.on('error', () => {})
-    req.write(body)
-    req.end()
-  }
-
-  return new Promise((resolve) => {
-    let settled = false
-    const onDone = (result: { status: string; error?: string }) => {
-      if (settled) return
-      settled = true
-      resolve(result)
-    }
-
-    const timeout = setTimeout(() => {
-      onDone({ status: 'attached' })
-    }, 8000)
-
-    bv.webContents.on('did-finish-load', () => {
-      clearTimeout(timeout)
-      if (browserView !== bv) {
-        onDone({ status: 'error', error: 'Browser view was replaced' })
-        return
-      }
-      onDone({ status: 'attached' })
-    })
-
-    bv.webContents.on('render-process-gone', (_event, details) => {
-      clearTimeout(timeout)
-      if (browserView === bv) {
-        detachBrowserView()
-      }
-      if (agentViewOwnedByEngine) {
-        console.error('[agent-view] Render process gone during agent run:', details?.reason)
-        notifyCrash()
-      }
-      onDone({ status: 'error', error: 'Render process gone' })
-    })
-  })
-}
-
 app.whenReady().then(async () => {
   registerIpcHandlers()
 
   ipcMain.handle('browser:getCdpPort', () => AGENT_CDP_PORT)
 
-  ipcMain.handle('browser:attach', async (_event, url: string) => {
-    if (agentViewOwnedByEngine) {
-      return { status: 'attached' }
-    }
-    return await attachBrowserView(url)
+  ipcMain.handle('browser:attachExternal', async (_event, { pid, cdpUrl }: { pid: number; cdpUrl: string }) => {
+    return await attachExternalView(pid, cdpUrl)
   })
 
-  ipcMain.handle('browser:detach', () => {
-    detachBrowserView()
-    return { status: 'detached' }
+  ipcMain.handle('browser:detachExternal', () => {
+    return detachExternalView()
   })
 
-  ipcMain.handle('browser:freeze', () => {
-    agentViewOwnedByEngine = false
-    return { status: 'frozen' }
+  ipcMain.handle('browser:getExternalStatus', () => {
+    return { attached: cloakWindow !== null, cdpUrl: cloakCDPUrl, pid: cloakPID }
   })
 
   startPythonBackend(AGENT_CDP_PORT)
   startInfoServer()
   await waitForPython()
   createWindow()
-
-  mainWindow?.on('resize', resizeBrowserView)
 })
 
 app.on('window-all-closed', () => {
@@ -237,6 +247,12 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  if (cloakPID) {
+    try {
+      process.kill(cloakPID, 'SIGKILL')
+    } catch {}
+  }
+  detachExternalView()
   if (pyProc) {
     pyProc.kill()
     pyProc = null
