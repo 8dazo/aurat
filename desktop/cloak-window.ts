@@ -1,6 +1,7 @@
 import koffi from 'koffi'
 
 const TITLE_BAR_HEIGHT_PT = 28
+const APP_MODE_TOOLBAR_PT = 0
 const OFFSCREEN_X = -10000
 const PANEL_WIDTH = 380
 
