@@ -145,4 +145,46 @@ export async function findWindowByPID(pid: number, maxRetries = 10): Promise<AXW
   return null
 }
 
+export function setPositionAndSize(window: AXWindowRef, x: number, y: number, w: number, h: number): number {
+  const posValue = AXValueCreate(kAXValueTypeCGPoint, koffi.as({ x, y }, 'CGPoint *'))
+  if (!posValue) return -1
+  const posErr = AXUIElementSetAttributeValue(window.element, kAXPositionAttr, posValue)
+  CFRelease(posValue)
+
+  const sizeValue = AXValueCreate(kAXValueTypeCGSize, koffi.as({ width: w, height: h }, 'CGSize *'))
+  if (!sizeValue) {
+    return posErr || -1
+  }
+  const sizeErr = AXUIElementSetAttributeValue(window.element, kAXSizeAttr, sizeValue)
+  CFRelease(sizeValue)
+
+  return posErr || sizeErr
+}
+
+export function raiseWindow(window: AXWindowRef): number {
+  return AXUIElementPerformAction(window.element, kAXRaiseActionStr)
+}
+
+export function minimizeWindow(window: AXWindowRef): number {
+  const kCFBooleanTrueLocal = koffi.decode(coreFoundation.symbol('kCFBooleanTrue', CFBooleanRef), CFBooleanRef)
+  const err = AXUIElementSetAttributeValue(window.element, kAXMinimizedAttr, kCFBooleanTrueLocal)
+  return err
+}
+
+export function unminimizeWindow(window: AXWindowRef): number {
+  const kCFBooleanFalseLocal = koffi.decode(coreFoundation.symbol('kCFBooleanFalse', CFBooleanRef), CFBooleanRef)
+  const err = AXUIElementSetAttributeValue(window.element, kAXMinimizedAttr, kCFBooleanFalseLocal)
+  return err
+}
+
+let retainedAppElement: unknown = null
+
+export function dispose(): void {
+  if (retainedAppElement) {
+    try { CFRelease(retainedAppElement) } catch {}
+    retainedAppElement = null
+  }
+  cachedTrusted = null
+}
+
 export { TITLE_BAR_HEIGHT_PT, OFFSCREEN_X, PANEL_WIDTH, kAXErrorAPIDisabled, kAXErrorCannotComplete, kAXErrorInvalidUIElement }
