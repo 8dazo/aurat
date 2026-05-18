@@ -1,19 +1,18 @@
 """
 aurat_agent.py — Browser-use orchestrator for auto-apply.
 
-Connects browser-use to Electron's Chromium via CDP so the
-browser preview shows the agent working live inside the app.
+Connects browser-use to CloakBrowser's Chromium via CDP.
+Electron magnetizes the CloakBrowser window via AXUIElement so it
+appears embedded inside the app.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 
 from browser_use import Agent, Browser, BrowserConfig, Controller
 from browser_use.browser.context import BrowserContext, BrowserContextConfig
 from browser_use.browser.views import BrowserError as BUBrowserError, TabInfo
-from playwright.async_api import async_playwright
 
 from agents.base import BaseAgent
 from agents.detector import detect_ats_platform_url
@@ -21,9 +20,9 @@ from agents.step_monitor import StepMonitor
 from agents.context_compressor import ContextCompressor
 from llm.openrouter import get_agent_llm
 from utils.stealth import (
-    attach_agent_view,
-    detach_agent_view,
-    get_electron_cdp_url,
+    launch_cloakbrowser,
+    attach_external_view,
+    detach_external_view,
 )
 
 logger = logging.getLogger(__name__)
@@ -244,53 +243,6 @@ CRITICAL RULES:
 """
 
 
-async def _navigate_agent_page(cdp_url: str, job_url: str) -> None:
-    """Use Playwright to find and navigate the agent WebContentsView to the job URL.
-
-    This ensures browser-use connects to the correct page (the agent view)
-    instead of the main Electron UI page.
-    """
-    pw = await async_playwright().start()
-    try:
-        browser = await pw.chromium.connect_over_cdp(cdp_url)
-        contexts = browser.contexts
-        if not contexts:
-            raise RuntimeError("No browser contexts found in Electron")
-
-        ctx = contexts[0]
-        pages = ctx.pages
-        agent_page = None
-        for p in pages:
-            url = p.url or ""
-            if "localhost:3000" not in url and "127.0.0.1:3000" not in url:
-                agent_page = p
-                break
-
-        if agent_page is None:
-            agent_page = await ctx.new_page()
-
-        logger.info("Navigating agent page from %s to %s", agent_page.url, job_url)
-        try:
-            await agent_page.goto(job_url, wait_until="domcontentloaded", timeout=30000)
-        except Exception as e:
-            err_str = str(e)
-            if "ERR_ABORTED" in err_str or "net::" in err_str:
-                await agent_page.wait_for_timeout(3000)
-                if agent_page.url and agent_page.url not in ("about:blank", ""):
-                    try:
-                        await agent_page.wait_for_load_state(
-                            "domcontentloaded", timeout=15000
-                        )
-                    except Exception:
-                        pass
-            else:
-                raise
-
-        logger.info("Agent page now at: %s", agent_page.url)
-    finally:
-        await pw.stop()
-
-
 class AuratAgent(BaseAgent):
     def __init__(self, profile: dict):
         super().__init__(profile)
@@ -311,30 +263,28 @@ class AuratAgent(BaseAgent):
 
         await manager.broadcast_status("Running")
 
-        # 1. Ask Electron to create/reuse a WebContentsView for the agent
-        try:
-            await attach_agent_view()
-        except Exception as e:
-            logger.warning("Could not attach agent view (may already exist): %s", e)
+        cloak_info = None
+        cloak_browser = None
 
-        # 2. Get CDP WebSocket URL from Electron (with retry)
         try:
-            cdp_url = await get_electron_cdp_url()
+            cloak_info = await launch_cloakbrowser(job_url)
+            cloak_browser = cloak_info["browser"]
+            pid = cloak_info["pid"]
+            cdp_url = cloak_info["cdp_url"]
         except Exception as e:
-            logger.exception("Failed to get Electron CDP URL: %s", e)
-            await manager.broadcast_log("browser", "error", f"electron_cdp_failed: {e}")
+            logger.exception("Failed to launch CloakBrowser: %s", e)
+            await manager.broadcast_log(
+                "browser", "error", f"cloakbrowser_launch_failed: {e}"
+            )
             await manager.broadcast_status("Idle")
             return
 
-        # 3. Navigate the agent WebContentsView to the job URL before browser-use connects
         try:
-            await _navigate_agent_page(cdp_url, job_url)
+            await attach_external_view(pid, cdp_url)
         except Exception as e:
-            logger.warning("Pre-navigation failed (browser-use will handle it): %s", e)
+            logger.warning("Could not attach external view to Electron: %s", e)
 
-        # 4. Connect browser-use to Electron's Chromium via CDP
         await manager.broadcast_log("browser", "navigated", f"page_url={job_url}")
-        cdp_port = os.environ.get("ELECTRON_CDP_PORT", "9222")
         browser = None
 
         # Setup step monitor and compressor for loop/stall and token optimization
@@ -347,7 +297,7 @@ class AuratAgent(BaseAgent):
         try:
             browser = Browser(
                 config=BrowserConfig(
-                    cdp_url=f"http://127.0.0.1:{cdp_port}",
+                    cdp_url=cdp_url,
                 )
             )
 
@@ -507,25 +457,16 @@ class AuratAgent(BaseAgent):
             except Exception:
                 pass
 
-            # Keep browser alive on success as requested. Only detach on error/failure.
             if run_failed:
                 try:
-                    await detach_agent_view()
+                    await detach_external_view()
                 except Exception:
                     pass
-            else:
-                # Freeze the view to keep the last page rendered!
                 try:
-                    import httpx
-
-                    info_port = 18733
-                    async with httpx.AsyncClient() as client:
-                        await client.get(
-                            f"http://127.0.0.1:{info_port}/freeze-view",
-                            timeout=httpx.Timeout(timeout=5.0),
-                        )
-                except Exception as ex:
-                    logger.warning("Failed to call freeze/detach fallback: %s", ex)
+                    if cloak_browser:
+                        await cloak_browser.close()
+                except Exception:
+                    pass
 
     async def _enrich_profile(self):
         try:
