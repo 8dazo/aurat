@@ -7,15 +7,18 @@ browser preview shows the agent working live inside the app.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 
-from browser_use import Agent, Browser, BrowserConfig
+from browser_use import Agent, Browser, BrowserConfig, Controller
+from browser_use.browser.context import BrowserContext, BrowserContextConfig
+from browser_use.browser.views import BrowserError as BUBrowserError, TabInfo
 from playwright.async_api import async_playwright
 
 from agents.base import BaseAgent
 from agents.detector import detect_ats_platform_url
+from agents.step_monitor import StepMonitor
+from agents.context_compressor import ContextCompressor
 from llm.openrouter import get_agent_llm
 from utils.stealth import (
     attach_agent_view,
@@ -24,6 +27,36 @@ from utils.stealth import (
 )
 
 logger = logging.getLogger(__name__)
+
+_BLOCKED_URL_SUBSTRS = ("localhost:3000", "127.0.0.1:3000")
+
+
+def _is_blocked_url(url: str) -> bool:
+    return any(s in url for s in _BLOCKED_URL_SUBSTRS)
+
+
+class FilteredBrowserContext(BrowserContext):
+    """BrowserContext that hides localhost UI pages from the agent.
+
+    When connected via CDP to Electron's Chromium, the agent sees all pages
+    including the Aurat UI (localhost:3000). This subclass filters those pages
+    out of tab listings and remaps tab indices so the agent never sees or
+    interacts with internal UI pages.
+    """
+
+    async def get_tabs_info(self) -> list[TabInfo]:
+        tabs = await super().get_tabs_info()
+        return [t for t in tabs if not _is_blocked_url(t.url)]
+
+    async def switch_to_tab(self, page_id: int) -> None:
+        all_tabs = await super().get_tabs_info()
+        filtered = [t for t in all_tabs if not _is_blocked_url(t.url)]
+        if page_id >= len(filtered):
+            raise BUBrowserError(f"Tab index {page_id} out of range")
+        target = filtered[page_id]
+        real_id = next(i for i, t in enumerate(all_tabs) if t.url == target.url)
+        await super().switch_to_tab(real_id)
+
 
 _MEMORY = None
 
@@ -72,8 +105,33 @@ _ATS_CONTEXT = {
     ),
 }
 
+# Define the shared browser-use action controller
+controller = Controller()
 
-def _build_task_prompt(
+
+@controller.action(
+    "Look up a memorized answer to a custom question from past applications"
+)
+async def lookup_answer(question: str) -> str:
+    """
+    Look up past answers semantically from the candidate's custom Q&A memory.
+    Use this for any multi-choice or open-text custom question on the form.
+    """
+    mem = _get_memory()
+    if mem:
+        try:
+            answer = await mem.best_qna_answer(question, min_score=0.35)
+            if answer:
+                logger.info(
+                    "Semantic QnA match found: '%s' -> '%s'", question[:50], answer[:50]
+                )
+                return f"Answer found in memory: {answer}"
+        except Exception as e:
+            logger.warning("Failed live lookup_answer: %s", e)
+    return "No exact match found in memory. Please use base candidate profile fields or ask candidate by outputting PAUSE_QUESTION: <the question text>."
+
+
+async def _build_task_prompt(
     job_url: str,
     profile: dict,
     ats_type: str = "generic",
@@ -99,11 +157,40 @@ def _build_task_prompt(
             f"  - {edu.get('degree', '')} in {edu.get('field', '')} from {edu.get('institution', '')}"
         )
 
+    # 1. Semantic QnA Injection at prompt-build time
     qna_section = ""
-    custom_qna = profile.get("custom_qna_memory", {})
-    if custom_qna:
-        qna_lines = [f"  Q: {q}\n  A: {a}" for q, a in list(custom_qna.items())[:20]]
-        qna_section = "\nKnown answers to custom questions:\n" + "\n".join(qna_lines)
+    mem = _get_memory()
+    if mem:
+        try:
+            job_title = profile.get("_current_job_title", "")
+            company = profile.get("_current_company", "")
+            search_query = f"{job_title} {company} application questions"
+            relevant_results = await mem.search_qna(search_query, top_k=10)
+            if relevant_results:
+                qna_lines = []
+                for res in relevant_results:
+                    q = res.metadata.get("question")
+                    a = res.metadata.get("answer")
+                    if q and a:
+                        qna_lines.append(f"  Q: {q}\n  A: {a}")
+                if qna_lines:
+                    qna_section = (
+                        "\nHighly relevant answers to custom questions:\n"
+                        + "\n".join(qna_lines)
+                    )
+        except Exception as e:
+            logger.warning("Failed semantic QnA injection: %s", e)
+
+    # Fallback to flat profile memory if semantic was empty or failed
+    if not qna_section:
+        custom_qna = profile.get("custom_qna_memory", {})
+        if custom_qna:
+            qna_lines = [
+                f"  Q: {q}\n  A: {a}" for q, a in list(custom_qna.items())[:20]
+            ]
+            qna_section = "\nKnown answers to custom questions:\n" + "\n".join(
+                qna_lines
+            )
 
     traits = profile.get("inferred_traits", {})
 
@@ -132,19 +219,29 @@ Education:
 {chr(10).join(education_strs)}
 {qna_section}
 
-Instructions:
-1. Navigate to the job URL
-2. Click the "Apply" or "Apply Now" button if on a job description page
-3. Fill out every field in the application form using the candidate profile above
-4. For dropdown menus, find and select the option that best matches the profile
-5. For custom questions not covered by the profile, answer honestly based on the candidate info
-6. Upload the resume file if available
-7. Review all filled fields for accuracy
-8. Submit the application
+TASK CHECKLIST — complete items in order:
+[ ] 1. Navigate to job URL and confirm the page loaded successfully.
+[ ] 2. Find and click "Apply", "Apply Now", or "Start Application" if you are on a job description page first.
+[ ] 3. Fill: First Name → "{personal.get("first_name", "")}"
+[ ] 4. Fill: Last Name → "{personal.get("last_name", "")}"
+[ ] 5. Fill: Email → "{personal.get("email", "")}"
+[ ] 6. Fill: Phone → "{personal.get("phone", "")}"
+[ ] 7. Upload: Resume/CV → use the file at path "{profile.get("resume_path", "")}" (strictly select and upload this file).
+[ ] 8. Answer all custom questions honestly and accurately based on candidate profile info.
+[ ] 9. Review all fields for accuracy.
+[ ] 10. Click the "Submit", "Submit Application", or "Submit Form" button.
 
-If you encounter a custom question you cannot answer from the profile, type "PAUSE_QUESTION: <the question text>" and I will provide the answer.
-
-Complete the entire application process end-to-end."""
+CRITICAL RULES:
+- Do NOT fill a field you have already successfully filled.
+- If you see a field you already filled, SKIP it and move to the next unchecked item.
+- Do not repeat the same action or click the same element if it doesn't advance the state. If stuck, try scrolling or focus/unfocus.
+- NEVER switch to tabs with localhost or 127.0.0.1 URLs — these are internal app pages, not the job site.
+- NEVER click buttons like "Take Control", "Pause", or "Resume" on internal app pages — they control the agent, not the job form.
+- ONLY interact with the external job application website (the page you navigated to).
+- If you accidentally switch to a localhost tab, switch back to the job site tab immediately.
+- For custom questions, use the 'lookup_answer' tool to search memory first before pausing!
+- If you still encounter a custom question you cannot answer from the profile or memory lookup, output exactly: "PAUSE_QUESTION: <the question text>" to ask the user.
+"""
 
 
 async def _navigate_agent_page(cdp_url: str, job_url: str) -> None:
@@ -161,7 +258,6 @@ async def _navigate_agent_page(cdp_url: str, job_url: str) -> None:
             raise RuntimeError("No browser contexts found in Electron")
 
         ctx = contexts[0]
-        # Find the agent page (the one that's NOT the main UI)
         pages = ctx.pages
         agent_page = None
         for p in pages:
@@ -171,7 +267,6 @@ async def _navigate_agent_page(cdp_url: str, job_url: str) -> None:
                 break
 
         if agent_page is None:
-            # Fallback: create a new page
             agent_page = await ctx.new_page()
 
         logger.info("Navigating agent page from %s to %s", agent_page.url, job_url)
@@ -232,7 +327,6 @@ class AuratAgent(BaseAgent):
             return
 
         # 3. Navigate the agent WebContentsView to the job URL before browser-use connects
-        #    This ensures browser-use finds and operates on the correct page.
         try:
             await _navigate_agent_page(cdp_url, job_url)
         except Exception as e:
@@ -242,6 +336,14 @@ class AuratAgent(BaseAgent):
         await manager.broadcast_log("browser", "navigated", f"page_url={job_url}")
         cdp_port = os.environ.get("ELECTRON_CDP_PORT", "9222")
         browser = None
+
+        # Setup step monitor and compressor for loop/stall and token optimization
+        step_monitor = StepMonitor(max_steps=40)
+        context_compressor = ContextCompressor(max_keep=5)
+
+        run_failed = False
+        final_url = job_url
+
         try:
             browser = Browser(
                 config=BrowserConfig(
@@ -255,41 +357,132 @@ class AuratAgent(BaseAgent):
 
             self.log_step("detect", "completed", f"platform={ats_type}")
 
-            task_prompt = _build_task_prompt(job_url, self.profile, ats_type)
+            task_prompt = await _build_task_prompt(job_url, self.profile, ats_type)
 
             llm = get_agent_llm()
 
             async def on_step(state, model_output, step_num):
+                nonlocal final_url
+                from api.ws import manager as ws_manager
+
                 try:
                     current_url = ""
                     if state and hasattr(state, "url") and state.url:
                         current_url = state.url
+                        final_url = current_url
+
                     step_name = f"Step {step_num}"
                     action_names = []
                     if model_output and hasattr(model_output, "action"):
                         for action in model_output.action:
                             action_names.append(type(action).__name__)
+
                     if action_names:
                         step_name += f": {', '.join(action_names)}"
                     if current_url:
                         step_name += f" → {current_url}"
-                        await manager.broadcast_log(
+                        await ws_manager.broadcast_log(
                             "browser", "navigated", f"page_url={current_url}"
                         )
+
+                    # Core Loop & Stall Detection
+                    action_key = StepMonitor.action_key_from_model_output(model_output)
+                    step_monitor.record(
+                        action_key=action_key,
+                        current_url=current_url,
+                        new_field_filled=any(
+                            act in action_names
+                            for act in (
+                                "InputText",
+                                "SelectDropdownOption",
+                                "UploadFile",
+                            )
+                        ),
+                    )
+
+                    if step_monitor.is_stuck():
+                        stuck_reason = step_monitor.stuck_description()
+                        logger.warning(
+                            "StepMonitor stuck condition met: %s", stuck_reason
+                        )
+                        await ws_manager.broadcast_log(
+                            "agent", "warning", f"Self-Correction: {stuck_reason}"
+                        )
+                        # Provide corrective context
+                        task_prompt_update = (
+                            f"\n[CRITICAL NOTE: You are currently looping or stuck: {stuck_reason}. "
+                            "Please try a different selector, use TAB key, scroll, or proceed to the next step. "
+                            "Do not repeat the previous failing action.]"
+                        )
+                        # browser-use lets us inject step context via message_context dynamically
+                        agent.message_context = task_prompt_update
+
+                    # Token progressive compression
+                    compressed_history = context_compressor.get_summary(self.steps_log)
+                    if compressed_history:
+                        agent.message_context = (
+                            (agent.message_context or "") + "\n" + compressed_history
+                        )
+
+                    # Intercept custom question pauses
+                    if (
+                        model_output
+                        and hasattr(model_output, "text")
+                        and model_output.text
+                    ):
+                        text = model_output.text
+                        if "PAUSE_QUESTION:" in text:
+                            import re
+
+                            match = re.search(r"PAUSE_QUESTION:\s*(.*)", text)
+                            if match:
+                                question = match.group(1).strip()
+                                logger.info(
+                                    "Custom question detected from agent output: %s",
+                                    question,
+                                )
+                                from agents.answer_resolver import AnswerResolver
+
+                                resolver = AnswerResolver(self.profile)
+                                resolved_ans = await resolver.resolve(question)
+                                if resolved_ans:
+                                    logger.info(
+                                        "Successfully auto-resolved question: '%s' -> '%s'",
+                                        question,
+                                        resolved_ans,
+                                    )
+                                    agent.message_context = (
+                                        (agent.message_context or "")
+                                        + f"\n[Auto-resolved question: {question} -> {resolved_ans}. Please use this answer.]"
+                                    )
+                                else:
+                                    await self.pause(f"Custom question: {question}")
+                                    await ws_manager.broadcast_status(
+                                        "Paused", f"Custom question: {question}"
+                                    )
+
                     self.log_step("agent", "running", step_name)
-                except Exception:
-                    pass
+                except Exception as ex:
+                    logger.warning("on_step hook exception: %s", ex)
 
             agent = Agent(
                 task=task_prompt,
                 llm=llm,
                 browser=browser,
+                browser_context=FilteredBrowserContext(
+                    browser=browser,
+                    config=BrowserContextConfig(disable_security=True),
+                ),
+                controller=controller,
                 register_new_step_callback=on_step,
+                use_vision=False,
+                max_actions_per_step=6,
+                max_failures=3,
             )
 
             self.log_step("detect_fields", "running", "Agent processing page...")
 
-            result = await agent.run()
+            result = await agent.run(max_steps=40)
 
             self.log_step("done", "completed", "Application process finished")
             await manager.broadcast_status("Idle")
@@ -297,11 +490,15 @@ class AuratAgent(BaseAgent):
             if self.custom_questions:
                 await self._enrich_profile()
 
+            # NEW: Freeze the view so it stays open for the user to review
+            await manager.broadcast_log("browser", "completed", f"page_url={final_url}")
             return result
 
         except Exception as e:
+            run_failed = True
+            error_msg = f"{type(e).__name__}: {e}"
             logger.exception("Agent run failed: %s", e)
-            self.log_step("agent", "error", str(e))
+            self.log_step("agent", "error", error_msg)
             await manager.broadcast_status("Idle")
         finally:
             try:
@@ -309,10 +506,26 @@ class AuratAgent(BaseAgent):
                     await browser.close()
             except Exception:
                 pass
-            try:
-                await detach_agent_view()
-            except Exception:
-                pass
+
+            # Keep browser alive on success as requested. Only detach on error/failure.
+            if run_failed:
+                try:
+                    await detach_agent_view()
+                except Exception:
+                    pass
+            else:
+                # Freeze the view to keep the last page rendered!
+                try:
+                    import httpx
+
+                    info_port = 18733
+                    async with httpx.AsyncClient() as client:
+                        await client.get(
+                            f"http://127.0.0.1:{info_port}/freeze-view",
+                            timeout=httpx.Timeout(timeout=5.0),
+                        )
+                except Exception as ex:
+                    logger.warning("Failed to call freeze/detach fallback: %s", ex)
 
     async def _enrich_profile(self):
         try:

@@ -31,10 +31,16 @@ class ConnectionManager:
                 if ws in self.log_connections:
                     self.log_connections.remove(ws)
 
-    async def broadcast_log(self, step: str, status: str, detail: str = ""):
-        msg = json.dumps(
-            {"type": "log", "message": detail or status, "step": step, "status": status}
-        )
+    async def broadcast_log(self, step: str, status: str, detail: str = "", history_id: int | None = None):
+        payload = {
+            "type": "log",
+            "message": detail or status,
+            "step": step,
+            "status": status,
+        }
+        if history_id is not None:
+            payload["history_id"] = history_id
+        msg = json.dumps(payload)
         for ws in self.log_connections[:]:
             try:
                 await ws.send_text(msg)

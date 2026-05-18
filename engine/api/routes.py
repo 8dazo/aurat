@@ -272,6 +272,39 @@ async def start_application(body: ApplicationStartRequest):
     if _active_agent and not _active_agent.paused:
         raise HTTPException(409, "An application is already running")
 
+    # Duplicate application guard (14 days restriction)
+    if not body.force:
+        try:
+            history = await db_get_history()
+            from datetime import datetime, timedelta
+            now = datetime.utcnow()
+            fourteen_days_ago = now - timedelta(days=14)
+
+            for entry in history:
+                if entry.get("status") == "completed":
+                    created_at_str = entry.get("created_at", "")
+                    created_at = None
+                    try:
+                        created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00")).replace(tzinfo=None)
+                    except Exception:
+                        try:
+                            created_at = datetime.strptime(created_at_str[:19], "%Y-%m-%d %H:%M:%S")
+                        except Exception:
+                            pass
+                    
+                    if created_at and created_at > fourteen_days_ago:
+                        if entry.get("job_url") == body.job_url:
+                            raise HTTPException(409, "You have already successfully applied to this job URL in the last 14 days.")
+                        
+                        same_company = entry.get("company", "").strip().lower() == body.job_company.strip().lower()
+                        same_title = entry.get("job_title", "").strip().lower() == body.job_title.strip().lower()
+                        if same_company and same_title and body.job_company and body.job_title:
+                            raise HTTPException(409, f"You have already applied to a similar role ({body.job_title}) at {body.job_company} in the last 14 days.")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning("Duplicate guard check failed: %s", e)
+
     profile_data = body.profile if isinstance(body.profile, dict) else {}
 
     if not profile_data.get("resume_path"):
@@ -293,11 +326,6 @@ async def start_application(body: ApplicationStartRequest):
     _active_agent = AuratAgent(profile_data)
     _active_agent.ats_type = body.ats_type or "generic"
 
-    if _active_agent:
-        _active_agent.on_step = lambda step, status, detail="": asyncio.ensure_future(
-            manager.broadcast_log(step, status, detail)
-        )
-
     job_url = body.job_url
     job_title = body.job_title
     job_company = body.job_company
@@ -317,6 +345,11 @@ async def start_application(body: ApplicationStartRequest):
     )
     history_id = history_entry.get("id") if isinstance(history_entry, dict) else None
 
+    if _active_agent:
+        _active_agent.on_step = lambda step, status, detail="": asyncio.ensure_future(
+            manager.broadcast_log(step, status, detail, history_id=history_id)
+        )
+
     async def run_agent():
         global _active_agent, _agent_task
         agent = _active_agent
@@ -331,7 +364,18 @@ async def start_application(body: ApplicationStartRequest):
             final_questions = agent.custom_questions
 
             if history_id:
-                await db_update_history_status(history_id, "completed", final_steps)
+                final_url = body.job_url
+                for s in reversed(final_steps):
+                    d = s.get("detail", "")
+                    if "→" in d:
+                        final_url = d.split("→")[-1].strip()
+                        break
+                await db_update_history_status(
+                    history_id,
+                    "completed",
+                    final_steps,
+                    final_url=final_url
+                )
 
             await manager.broadcast_status("Idle")
 
@@ -341,7 +385,18 @@ async def start_application(body: ApplicationStartRequest):
             await manager.broadcast_log("agent", "error", error_msg)
             if history_id:
                 steps = agent.steps_log if agent else []
-                await db_update_history_status(history_id, "failed", steps)
+                final_url = body.job_url
+                for s in reversed(steps):
+                    d = s.get("detail", "")
+                    if "→" in d:
+                        final_url = d.split("→")[-1].strip()
+                        break
+                await db_update_history_status(
+                    history_id,
+                    "failed",
+                    steps,
+                    final_url=final_url
+                )
             await manager.broadcast_status("Idle")
         finally:
             _active_agent = None

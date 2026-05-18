@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { STAGE_ICONS, STATUS_COLORS } from "@/lib/constants"
 import { electronAPI } from "@/lib/electron-api"
+import { useAgentWs } from "@/lib/use-agent-ws"
 
 interface StepLog {
   step: string
@@ -34,13 +35,11 @@ interface HistoryDetail {
 
 const statusConfig: Record<string, { label: string; className: string }> = {
   pending:   { label: "Pending",   className: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
-  running:   { label: "Running",   className: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
-  paused:    { label: "Paused",    className: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
+  running:   { label: "Running",   className: "bg-blue-500/20 text-blue-400 border-blue-500/30 animate-pulse border-blue-500" },
+  paused:    { label: "Paused",    className: "bg-orange-500/20 text-orange-400 border-orange-500/30 border-orange-500 animate-pulse" },
   completed: { label: "Completed", className: "bg-green-500/20 text-green-400 border-green-500/30" },
   failed:    { label: "Failed",    className: "bg-red-500/20 text-red-400 border-red-500/30" },
 }
-
-
 
 function parseJson<T>(val: string | T, fallback: T): T {
   if (typeof val === "string") {
@@ -54,8 +53,9 @@ export default function HistoryDetailClient() {
   const router = useRouter()
   const [entry, setEntry] = useState<HistoryDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [localSteps, setLocalSteps] = useState<StepLog[]>([])
 
-  useEffect(() => {
+  const refetchEntry = useCallback(() => {
     if (!id) return
     electronAPI.python.request(`/db/history/${id}`)
       .then((data) => {
@@ -64,6 +64,43 @@ export default function HistoryDetailClient() {
       })
       .catch(() => setLoading(false))
   }, [id])
+
+  useEffect(() => {
+    refetchEntry()
+  }, [refetchEntry])
+
+  useEffect(() => {
+    if (entry) {
+      setLocalSteps(parseJson<StepLog[]>(entry.steps_log, []))
+    }
+  }, [entry])
+
+  const handleStatus = useCallback((s: string) => {
+    if (s === "Idle") {
+      refetchEntry()
+    } else if (entry) {
+      setEntry(prev => prev ? { ...prev, status: s.toLowerCase() } : null)
+    }
+  }, [entry, refetchEntry])
+
+  const handleLog = useCallback((message: string) => {
+    const parts = message.split(" | ")
+    const [step, stat, detail] = parts.length >= 2
+      ? [parts[0], parts[1], parts.slice(2).join(" | ")]
+      : [message, "info", ""]
+    
+    setLocalSteps((prev) => {
+      if (prev.some(p => p.step === step && p.status === stat && p.detail === detail)) {
+        return prev
+      }
+      return [...prev, { step, status: stat, detail }]
+    })
+  }, [])
+
+  useAgentWs({
+    onStatus: handleStatus,
+    onLog: (entry?.status === "running" || entry?.status === "paused") ? handleLog : undefined,
+  })
 
   if (loading) {
     return (
@@ -84,7 +121,6 @@ export default function HistoryDetailClient() {
     )
   }
 
-  const steps = parseJson<StepLog[]>(entry.steps_log, [])
   const questions = parseJson<CustomQuestion[]>(entry.custom_questions, [])
   const statusCfg = statusConfig[entry.status] ?? statusConfig.pending
 
@@ -101,13 +137,20 @@ export default function HistoryDetailClient() {
   return (
     <div className="max-w-4xl space-y-6">
       {/* Back + Title */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between">
         <Button variant="ghost" size="sm" className="gap-1.5 -ml-2" onClick={() => router.push("/history")}>
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/>
           </svg>
           History
         </Button>
+
+        {(entry.status === "running" || entry.status === "paused") && (
+          <Badge className="bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1.5 animate-pulse">
+            <span className="h-2 w-2 rounded-full bg-red-500" />
+            LIVE Updates
+          </Badge>
+        )}
       </div>
 
       {/* Job Header Card */}
@@ -162,14 +205,14 @@ export default function HistoryDetailClient() {
               <rect x="9" y="3" width="6" height="4" rx="1"/>
             </svg>
             Step Log
-            <span className="text-xs text-muted-foreground font-normal">({steps.length} steps)</span>
+            <span className="text-xs text-muted-foreground font-normal">({localSteps.length} steps)</span>
           </h2>
 
-          {steps.length === 0 ? (
+          {localSteps.length === 0 ? (
             <p className="text-xs text-muted-foreground italic">No steps recorded</p>
           ) : (
             <div className="space-y-1 max-h-[360px] overflow-y-auto pr-1">
-              {steps.map((s, i) => {
+              {localSteps.map((s, i) => {
                 const icon = STAGE_ICONS[s.step] ?? "•"
                 const color = STATUS_COLORS[s.status] ?? "text-foreground"
                 return (

@@ -9,5 +9,5 @@
     "resolveJsonModule": true,
     "skipLibCheck": true
   },
-  "include": ["main.ts", "preload.ts", "ipc-handlers.ts"]
+  "include": ["main.ts", "preload.ts", "ipc-handlers.ts", "cloak-window.ts"]
 }

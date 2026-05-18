@@ -97,5 +97,11 @@ export const electronAPI = {
       }
       return { status: 'unavailable' }
     },
+    freeze: async (): Promise<{ status: string }> => {
+      if (typeof window !== 'undefined' && window.electronAPI?.browser?.freeze) {
+        return window.electronAPI.browser.freeze()
+      }
+      return { status: 'unavailable' }
+    },
   },
 }

@@ -74,6 +74,10 @@ function startInfoServer() {
       agentViewOwnedByEngine = false
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ status: 'ok' }))
+    } else if (req.url === '/freeze-view') {
+      agentViewOwnedByEngine = false
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ status: 'ok' }))
     } else if (req.url === '/view-status') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ attached: browserView !== null, engineOwned: agentViewOwnedByEngine }))
@@ -213,6 +217,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('browser:detach', () => {
     detachBrowserView()
     return { status: 'detached' }
+  })
+
+  ipcMain.handle('browser:freeze', () => {
+    agentViewOwnedByEngine = false
+    return { status: 'frozen' }
   })
 
   startPythonBackend(AGENT_CDP_PORT)

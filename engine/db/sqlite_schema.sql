@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS application_history (
     status TEXT NOT NULL DEFAULT 'pending',
     steps_log TEXT NOT NULL DEFAULT '[]',
     custom_questions TEXT NOT NULL DEFAULT '[]',
+    token_count INTEGER DEFAULT 0,
+    final_url TEXT DEFAULT '',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

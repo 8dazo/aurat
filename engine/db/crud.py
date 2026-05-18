@@ -16,6 +16,15 @@ async def init_db():
     schema_path = os.path.join(os.path.dirname(__file__), "sqlite_schema.sql")
     with open(schema_path, "r") as f:
         await db.executescript(f.read())
+    # Database migration for token_count and final_url
+    try:
+        await db.execute("ALTER TABLE application_history ADD COLUMN token_count INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        await db.execute("ALTER TABLE application_history ADD COLUMN final_url TEXT DEFAULT ''")
+    except Exception:
+        pass
     await db.commit()
     await db.close()
 
@@ -129,20 +138,28 @@ async def get_history_by_id(entry_id: int):
         await db.close()
 
 
-async def update_history_status(entry_id: int, status: str, steps_log: list | None = None):
+async def update_history_status(
+    entry_id: int,
+    status: str,
+    steps_log: list | None = None,
+    token_count: int | None = None,
+    final_url: str | None = None,
+):
     db = await _get_db()
     try:
         if steps_log is not None:
             await db.execute(
                 "UPDATE application_history SET status = ?, steps_log = ?, "
+                "token_count = COALESCE(?, token_count), final_url = COALESCE(?, final_url), "
                 "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                [status, json.dumps(steps_log), entry_id],
+                [status, json.dumps(steps_log), token_count, final_url, entry_id],
             )
         else:
             await db.execute(
-                "UPDATE application_history SET status = ?, updated_at = CURRENT_TIMESTAMP "
-                "WHERE id = ?",
-                [status, entry_id],
+                "UPDATE application_history SET status = ?, "
+                "token_count = COALESCE(?, token_count), final_url = COALESCE(?, final_url), "
+                "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                [status, token_count, final_url, entry_id],
             )
         await db.commit()
     finally:

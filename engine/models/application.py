@@ -8,6 +8,7 @@ class ApplicationStartRequest(BaseModel):
     ats_type: str = "generic"
     job_title: str = ""
     job_company: str = ""
+    force: Optional[bool] = False
 
 
 class ManualAnswerRequest(BaseModel):

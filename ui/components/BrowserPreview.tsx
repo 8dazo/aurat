@@ -78,10 +78,18 @@ export function BrowserPreview() {
         )}
 
         {status === "Idle" && attached && (
-          <div className="w-full space-y-3">
-            <Badge variant="secondary" className="text-sm px-3 py-1">
-              Preview — page loaded
+          <div className="text-center space-y-3 max-w-md">
+            <div className="h-12 w-12 mx-auto rounded-full bg-green-500/10 flex items-center justify-center text-green-500">
+              <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/>
+              </svg>
+            </div>
+            <Badge variant="secondary" className="text-sm px-3 py-1 bg-green-500/15 text-green-400 border-green-500/25">
+              Application Complete
             </Badge>
+            <p className="text-sm text-muted-foreground">
+              Form has been submitted. Scroll the browser view to double check your confirmation.
+            </p>
           </div>
         )}
 
