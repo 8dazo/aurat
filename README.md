@@ -33,17 +33,55 @@ Existing observability tools can remain the system of record. Aurat sits underne
 
 **Keep your tracing stack. Aurat turns production behavior into reliable CI tests.**
 
-## Initial MVP
+## Working MVP
 
-- OpenAI-compatible API support first
-- record / replay / verify modes
-- streaming, structured outputs, and tool-call support
-- behavioral contracts generated from real traces
-- deterministic local + CI runtime
-- GitHub Actions integration
-- failure injection for timeouts, rate limits, malformed outputs, and tool errors
-- small live-canary suite for drift detection
-- connectors for OpenTelemetry, Langfuse, and LangSmith
+The first slice is intentionally small and dependency-free. It provides an OpenAI-compatible proxy with three modes:
+
+- `live` — proxy requests to the upstream provider;
+- `record` — proxy the real request while persisting the exact response to `.aurat/recordings.jsonl`;
+- `replay` — return a deterministic previously recorded response without calling the upstream provider.
+
+Request fingerprints are stable across JSON object-key ordering, and replay misses return a deterministic `aurat_replay_miss` error instead of silently falling through to a live model.
+
+### Run it
+
+Requires Node.js 20+.
+
+```bash
+npm test
+
+# Record real calls
+AURAT_MODE=record node src/cli.js proxy
+
+# Replay the same calls with zero upstream requests
+AURAT_MODE=replay node src/cli.js proxy
+```
+
+Point an OpenAI-compatible client at:
+
+```text
+http://127.0.0.1:4010/v1
+```
+
+Useful environment variables:
+
+```text
+AURAT_MODE=live|record|replay
+AURAT_PORT=4010
+AURAT_UPSTREAM_BASE_URL=https://api.openai.com
+AURAT_STORE_PATH=.aurat/recordings.jsonl
+```
+
+## Next milestones
+
+1. Validate recording/replay against a real OpenAI-compatible application.
+2. Preserve streaming timing and add explicit streaming fixtures.
+3. Add tool-call and structured-output assertions.
+4. Introduce versioned behavioral contracts on top of recorded traffic.
+5. Add failure injection for timeouts, rate limits, malformed outputs, and tool errors.
+6. Add OpenTelemetry/Langfuse/LangSmith trace ingestion.
+7. Add a small live-canary suite for prompt/model drift detection.
+8. Add a GitHub PR report and release gate.
 
 ## Product principle
 
@@ -55,4 +93,4 @@ We use Garry Tan's **gstack** workflow for product thinking, engineering plannin
 
 ## Status
 
-Pre-MVP / validation. The immediate goal is to integrate with real AI teams, reproduce their current CI pain, and catch at least one real regression that would otherwise have shipped.
+Pre-MVP / validation. The immediate product goal is to integrate with real AI teams, reproduce their current CI pain, and catch at least one real regression that would otherwise have shipped.
