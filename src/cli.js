@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { loadAuratConfig } from "./config.js";
 import { buildContract, formatVerification, readContract, verifyContract, writeContract } from "./contracts.js";
+import { FAULT_NAMES } from "./faults.js";
 import { RecordingStore } from "./store.js";
 import { formatSummary, summarizeRecordings } from "./inspect.js";
 import { startAuratServer } from "./server.js";
@@ -19,7 +20,7 @@ function contractPath() {
 }
 
 function usage() {
-  console.log(`Aurat.ai — deterministic CI for AI applications\n\nUsage:\n  aurat proxy [--mode live|record|replay] [--port 4010] [--config .aurat/config.json]\n  aurat inspect\n  aurat contract [--output .aurat/contracts.json]\n  aurat verify [--contract .aurat/contracts.json]\n\nEnvironment:\n  AURAT_MODE                live | record | replay\n  AURAT_PORT                local proxy port (default: 4010)\n  AURAT_UPSTREAM_BASE_URL   upstream API base (default: https://api.openai.com)\n  AURAT_UPSTREAM_API_KEY    optional provider key override\n  AURAT_STORE_PATH          recording file (default: .aurat/recordings.jsonl)\n  AURAT_CONFIG_PATH         matching config (default: .aurat/config.json)\n  AURAT_CONTRACT_PATH       contract file (default: .aurat/contracts.json)\n`);
+  console.log(`Aurat.ai — deterministic CI for AI applications\n\nUsage:\n  aurat proxy [--mode live|record|replay] [--port 4010] [--config .aurat/config.json]\n              [--fault ${FAULT_NAMES.join("|")}] [--delay-ms 500]\n  aurat inspect\n  aurat contract [--output .aurat/contracts.json]\n  aurat verify [--contract .aurat/contracts.json]\n\nEnvironment:\n  AURAT_MODE                live | record | replay\n  AURAT_PORT                local proxy port (default: 4010)\n  AURAT_UPSTREAM_BASE_URL   upstream API base (default: https://api.openai.com)\n  AURAT_UPSTREAM_API_KEY    optional provider key override\n  AURAT_STORE_PATH          recording file (default: .aurat/recordings.jsonl)\n  AURAT_CONFIG_PATH         matching config (default: .aurat/config.json)\n  AURAT_CONTRACT_PATH       contract file (default: .aurat/contracts.json)\n  AURAT_FAULT               deterministic fault profile\n  AURAT_DELAY_MS            delay every model request before handling it\n`);
 }
 
 async function proxy() {
@@ -27,6 +28,9 @@ async function proxy() {
   if (!["live", "record", "replay"].includes(mode)) throw new Error(`Invalid AURAT_MODE: ${mode}`);
 
   const port = Number(readFlag("--port") ?? process.env.AURAT_PORT ?? "4010");
+  const delayMs = Number(readFlag("--delay-ms") ?? process.env.AURAT_DELAY_MS ?? "0");
+  if (!Number.isFinite(delayMs) || delayMs < 0) throw new Error(`Invalid AURAT_DELAY_MS: ${delayMs}`);
+  const fault = readFlag("--fault") ?? process.env.AURAT_FAULT ?? undefined;
   const configPath = readFlag("--config") ?? process.env.AURAT_CONFIG_PATH ?? ".aurat/config.json";
   const config = await loadAuratConfig(configPath);
   const { port: boundPort } = await startAuratServer({
@@ -36,9 +40,13 @@ async function proxy() {
     upstreamApiKey: process.env.AURAT_UPSTREAM_API_KEY ?? process.env.OPENAI_API_KEY,
     storePath: storePath(),
     matching: config.match,
+    fault,
+    delayMs,
   });
 
   console.log(`[aurat] proxy listening on http://127.0.0.1:${boundPort} (${mode})`);
+  if (fault) console.log(`[aurat] fault=${fault}`);
+  if (delayMs > 0) console.log(`[aurat] injected delay=${delayMs}ms`);
   if (config.match.ignoreBodyPaths.length || config.match.ignoreQueryParams.length) {
     console.log(`[aurat] matching config=${configPath} ignored-body=${config.match.ignoreBodyPaths.length} ignored-query=${config.match.ignoreQueryParams.length}`);
   }
