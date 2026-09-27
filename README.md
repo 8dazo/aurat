@@ -29,31 +29,50 @@ record  app -> Aurat -> provider + recording
 replay  app -> Aurat -> recording only
 ```
 
-`replay` is strict: an unknown request returns `aurat_replay_miss` and never silently reaches the real provider.
+`replay` is strict: an unknown request returns `aurat_replay_miss` and never silently reaches the real provider. Request fingerprints are stable across JSON object-key ordering and can explicitly ignore configured volatile fields.
 
-Request fingerprints are stable across JSON object-key ordering. Recordings preserve raw provider response bytes, including SSE/event-stream payloads, and older V1 text recordings remain replayable.
-
-### Run it
+### Record and replay
 
 Requires Node.js 20+.
 
 ```bash
 npm test
 
-# Record real calls
 OPENAI_API_KEY=sk-... AURAT_MODE=record node src/cli.js proxy
-
-# Replay the same calls with zero upstream requests
 AURAT_MODE=replay node src/cli.js proxy
 ```
 
-Point an OpenAI-compatible client at:
+Point an OpenAI-compatible client at `http://127.0.0.1:4010/v1`.
 
-```text
-http://127.0.0.1:4010/v1
+### Turn known-good behavior into a contract
+
+After recording representative scenarios:
+
+```bash
+node src/cli.js contract
 ```
 
-Aurat adds debugging headers such as `x-aurat-mode`, `x-aurat-replay`, and `x-aurat-fingerprint`.
+Aurat writes `.aurat/contracts.json`. Each request fingerprint receives a behavioral contract covering status, streaming mode, response kind, tool calls, finish reasons, and structured JSON top-level keys.
+
+Later, record the same scenarios against a changed prompt/model and run:
+
+```bash
+node src/cli.js verify
+```
+
+Example regression:
+
+```text
+Aurat contract: FAIL
+Scenarios: 12 checked, 11 passed, 1 failed
+
+POST /v1/chat/completions
+  ✗ kind: expected "tool_calls", got "text"
+  ✗ toolCalls: expected ["search_docs"], got []
+  ✗ finishReasons: expected ["tool_calls"], got ["stop"]
+```
+
+`aurat verify` exits non-zero on contracted behavior changes, so it can be used as a CI gate. New request fingerprints are surfaced as uncontracted scenarios without failing V1 verification automatically.
 
 ### Ignore volatile request data
 
@@ -62,17 +81,13 @@ Exact replay is the safe default. When your application adds request IDs, timest
 ```json
 {
   "match": {
-    "ignoreBodyPaths": [
-      "metadata.request_id",
-      "metadata.timestamp",
-      "messages.*.id"
-    ],
+    "ignoreBodyPaths": ["metadata.request_id", "metadata.timestamp", "messages.*.id"],
     "ignoreQueryParams": ["trace_id"]
   }
 }
 ```
 
-`*` matches one JSON path segment, including array indexes. The same matching rules must be used while recording and replaying. You can use another config with `--config path/to/config.json` or `AURAT_CONFIG_PATH`.
+`*` matches one JSON path segment, including array indexes. The same matching rules must be used while recording and replaying.
 
 ### Inspect captured traffic
 
@@ -80,9 +95,9 @@ Exact replay is the safe default. When your application adds request IDs, timest
 node src/cli.js inspect
 ```
 
-This summarizes recorded endpoints, models, and observed OpenAI-style tool calls without needing an observability dashboard.
+This summarizes recorded endpoints, models, and observed OpenAI-style tool calls.
 
-Useful environment variables:
+## Configuration
 
 ```text
 AURAT_MODE=live|record|replay
@@ -91,35 +106,31 @@ AURAT_UPSTREAM_BASE_URL=https://api.openai.com
 AURAT_UPSTREAM_API_KEY=...
 AURAT_STORE_PATH=.aurat/recordings.jsonl
 AURAT_CONFIG_PATH=.aurat/config.json
+AURAT_CONTRACT_PATH=.aurat/contracts.json
 ```
 
-`OPENAI_API_KEY` is used as the upstream key when `AURAT_UPSTREAM_API_KEY` is not set. A dedicated upstream key lets an application use a local/dummy client credential while Aurat authenticates to the real provider.
+`OPENAI_API_KEY` is used as the upstream key when `AURAT_UPSTREAM_API_KEY` is not set.
 
 ## What V1 proves
 
-The first milestone is not perfect model simulation. It is reproducible execution around a model dependency:
-
-1. capture a real interaction once;
-2. run the application again with the provider disconnected;
-3. preserve streaming/event payloads and tool-call-shaped responses;
-4. tolerate explicitly configured volatile request data;
-5. fail loudly when CI asks for behavior that was never recorded.
+1. Capture a real interaction once.
+2. Run the application again with the provider disconnected.
+3. Preserve streaming/event payloads and tool-call-shaped responses.
+4. Tolerate explicitly configured volatile request data.
+5. Turn known-good responses into versioned behavioral contracts.
+6. Fail CI when the same scenario changes its important behavior.
 
 ## Next milestones
 
 1. Preserve original streaming chunk timing and latency envelopes.
-2. Add tool-call and structured-output behavioral assertions.
-3. Introduce versioned behavioral contracts on top of recorded traffic.
-4. Add failure injection for timeouts, rate limits, malformed outputs, and tool errors.
-5. Add OpenTelemetry/Langfuse/LangSmith trace ingestion.
-6. Add a small live-canary suite for prompt/model drift detection.
-7. Add a GitHub PR report and release gate.
+2. Add failure injection for timeouts, rate limits, malformed outputs, and tool errors.
+3. Add OpenTelemetry/Langfuse/LangSmith trace ingestion.
+4. Add a small live-canary runner for prompt/model drift detection.
+5. Add a GitHub PR report and release gate.
 
 ## Product direction
 
 Aurat will integrate with LangSmith, Langfuse, Braintrust, and OpenTelemetry rather than asking teams to replace their tracing stack.
-
-The progression is intentionally:
 
 ```text
 record/replay
