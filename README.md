@@ -26,7 +26,7 @@ Aurat has two complementary test loops:
 ```text
 every commit                 nightly / pre-release
 ────────────                 ─────────────────────
-record once                  small live sample
+record/import once           small live sample
      ↓                             ↓
 replay locally / CI          real provider
      ↓                             ↓
@@ -48,6 +48,20 @@ AURAT_MODE=replay node src/cli.js proxy
 
 Point an OpenAI-compatible client at `http://127.0.0.1:4010/v1`. Replay is strict: an unknown request returns `aurat_replay_miss` and never silently reaches the provider.
 
+### Bootstrap from existing OpenTelemetry traces
+
+If the team already captures GenAI telemetry, Aurat can turn replayable OTLP JSON spans into its recording format:
+
+```bash
+node src/cli.js import-otel traces.json
+node src/cli.js inspect
+node src/cli.js contract
+```
+
+The importer uses current `gen_ai.input.messages`, `gen_ai.output.messages`, system-instruction, tool-definition, request-model, and related GenAI attributes. It normalizes supported chat spans into OpenAI-compatible requests/responses, including tool calls and streaming SSE.
+
+Message content is opt-in in OpenTelemetry and can contain sensitive information. Aurat skips incomplete spans instead of inventing fixtures, and prints the reason for every skipped class. Review/sanitize imported telemetry before committing recordings. See [`docs/OPENTELEMETRY.md`](docs/OPENTELEMETRY.md).
+
 ### Turn known-good behavior into a contract
 
 ```bash
@@ -59,7 +73,7 @@ Aurat snapshots status, streaming mode, response kind, tool calls, finish reason
 
 ### Gate pull requests with GitHub Actions
 
-Commit your reviewed recordings and contract, then add:
+Commit reviewed recordings and contracts, then add:
 
 ```yaml
 name: AI regression gate
@@ -77,7 +91,7 @@ jobs:
           contract: .aurat/contracts.json
 ```
 
-The action runs the deterministic verifier, writes the regression diff into the GitHub Actions job summary, and fails the check when a contracted behavior changes. During the alpha, `@main` is the supported reference; V1 will be pinned to a release tag before public distribution.
+The action runs the deterministic verifier, writes the regression diff into the GitHub Actions job summary, and fails the check when a contracted behavior changes. During alpha, `@main` is the supported reference; V1 will be pinned to a release tag before public distribution.
 
 ### Run a small live canary
 
@@ -155,7 +169,7 @@ AURAT_DELAY_MS=0
 
 ## What V1 proves
 
-1. Capture a real interaction once.
+1. Capture a real interaction once—or import a replayable GenAI trace from an existing OTel stack.
 2. Run the application again with the provider disconnected.
 3. Preserve streaming/event payloads and tool-call-shaped responses.
 4. Tolerate explicitly configured volatile request data.
@@ -167,13 +181,13 @@ AURAT_DELAY_MS=0
 
 ## Next milestones
 
-1. Import traces from OpenTelemetry, then add Langfuse/LangSmith adapters.
+1. Add Langfuse and LangSmith adapters on top of the normalized trace-import layer.
 2. Preserve original streaming chunk timing and latency envelopes.
 3. Cut and pin the first public V1 release.
 
 ## Product direction
 
-Aurat will integrate with LangSmith, Langfuse, Braintrust, and OpenTelemetry rather than asking teams to replace their tracing stack.
+Aurat integrates with LangSmith, Langfuse, Braintrust, and OpenTelemetry rather than asking teams to replace their tracing stack.
 
 ```text
 record/replay

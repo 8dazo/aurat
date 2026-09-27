@@ -1,8 +1,10 @@
 #!/usr/bin/env node
+import { readFile } from "node:fs/promises";
 import { formatCanaryResult, runCanary } from "./canary.js";
 import { loadAuratConfig } from "./config.js";
 import { buildContract, formatVerification, readContract, verifyContract, writeContract } from "./contracts.js";
 import { FAULT_NAMES } from "./faults.js";
+import { convertOtlpDocument, formatOtelImport } from "./otel.js";
 import { RecordingStore } from "./store.js";
 import { formatSummary, summarizeRecordings } from "./inspect.js";
 import { startAuratServer } from "./server.js";
@@ -21,7 +23,7 @@ function contractPath() {
 }
 
 function usage() {
-  console.log(`Aurat.ai — deterministic CI for AI applications\n\nUsage:\n  aurat proxy [--mode live|record|replay] [--port 4010] [--config .aurat/config.json]\n              [--fault ${FAULT_NAMES.join("|")}] [--delay-ms 500]\n  aurat inspect\n  aurat contract [--output .aurat/contracts.json]\n  aurat verify [--contract .aurat/contracts.json]\n  aurat canary [--contract .aurat/contracts.json] [--limit 10]\n\nEnvironment:\n  AURAT_MODE                live | record | replay\n  AURAT_PORT                local proxy port (default: 4010)\n  AURAT_UPSTREAM_BASE_URL   upstream API base (default: https://api.openai.com)\n  AURAT_UPSTREAM_API_KEY    optional provider key override\n  AURAT_STORE_PATH          recording file (default: .aurat/recordings.jsonl)\n  AURAT_CONFIG_PATH         matching config (default: .aurat/config.json)\n  AURAT_CONTRACT_PATH       contract file (default: .aurat/contracts.json)\n  AURAT_CANARY_LIMIT        max live canary scenarios (default: 10)\n  AURAT_FAULT               deterministic fault profile\n  AURAT_DELAY_MS            delay every model request before handling it\n`);
+  console.log(`Aurat.ai — deterministic CI for AI applications\n\nUsage:\n  aurat proxy [--mode live|record|replay] [--port 4010] [--config .aurat/config.json]\n              [--fault ${FAULT_NAMES.join("|")}] [--delay-ms 500]\n  aurat inspect\n  aurat contract [--output .aurat/contracts.json]\n  aurat verify [--contract .aurat/contracts.json]\n  aurat canary [--contract .aurat/contracts.json] [--limit 10]\n  aurat import-otel <otlp.json>\n\nEnvironment:\n  AURAT_MODE                live | record | replay\n  AURAT_PORT                local proxy port (default: 4010)\n  AURAT_UPSTREAM_BASE_URL   upstream API base (default: https://api.openai.com)\n  AURAT_UPSTREAM_API_KEY    optional provider key override\n  AURAT_STORE_PATH          recording file (default: .aurat/recordings.jsonl)\n  AURAT_CONFIG_PATH         matching config (default: .aurat/config.json)\n  AURAT_CONTRACT_PATH       contract file (default: .aurat/contracts.json)\n  AURAT_CANARY_LIMIT        max live canary scenarios (default: 10)\n  AURAT_FAULT               deterministic fault profile\n  AURAT_DELAY_MS            delay every model request before handling it\n`);
 }
 
 async function proxy() {
@@ -92,6 +94,17 @@ async function canary() {
   if (!result.verification.ok) process.exitCode = 1;
 }
 
+async function importOtel() {
+  const inputPath = process.argv[3] ?? readFlag("--input");
+  if (!inputPath || inputPath.startsWith("--")) throw new Error("Usage: aurat import-otel <otlp.json>");
+  const document = JSON.parse(await readFile(inputPath, "utf8"));
+  const result = convertOtlpDocument(document);
+  const store = new RecordingStore(storePath());
+  for (const recording of result.recordings) await store.append(recording);
+  process.stdout.write(formatOtelImport(result));
+  if (result.imported === 0) process.exitCode = 2;
+}
+
 async function main() {
   const command = process.argv[2];
   if (!command || command === "--help" || command === "-h") {
@@ -103,6 +116,7 @@ async function main() {
   if (command === "contract") return contract();
   if (command === "verify") return verify();
   if (command === "canary") return canary();
+  if (command === "import-otel") return importOtel();
 
   console.error(`Unknown command: ${command}`);
   usage();
