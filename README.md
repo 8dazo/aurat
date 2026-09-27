@@ -21,7 +21,7 @@ Aurat is not another tracing dashboard and not just an LLM mock server. Existing
 
 ## Working V1
 
-Aurat now has two complementary test loops:
+Aurat has two complementary test loops:
 
 ```text
 every commit                 nightly / pre-release
@@ -57,9 +57,31 @@ node src/cli.js verify
 
 Aurat snapshots status, streaming mode, response kind, tool calls, finish reasons, and structured JSON shape. `verify` exits non-zero when a contracted scenario changes.
 
+### Gate pull requests with GitHub Actions
+
+Commit your reviewed recordings and contract, then add:
+
+```yaml
+name: AI regression gate
+
+on: [pull_request]
+
+jobs:
+  aurat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: 8dazo/aurat@main
+        with:
+          recordings: .aurat/recordings.jsonl
+          contract: .aurat/contracts.json
+```
+
+The action runs the deterministic verifier, writes the regression diff into the GitHub Actions job summary, and fails the check when a contracted behavior changes. During the alpha, `@main` is the supported reference; V1 will be pinned to a release tag before public distribution.
+
 ### Run a small live canary
 
-Canaries intentionally make real provider calls. The default is capped at 10 scenarios, selected deterministically by fingerprint so repeated runs cover the same slice:
+Canaries intentionally make real provider calls. The default is capped at 10 scenarios, selected deterministically by fingerprint:
 
 ```bash
 OPENAI_API_KEY=sk-... node src/cli.js canary --limit 5
@@ -141,12 +163,13 @@ AURAT_DELAY_MS=0
 6. Fail CI when contracted behavior changes.
 7. Exercise provider failure, parser, retry, and latency paths deterministically.
 8. Check a capped live subset against the same contract for model/prompt drift.
+9. Drop the verifier into a GitHub pull-request check with no custom CI glue.
 
 ## Next milestones
 
 1. Import traces from OpenTelemetry, then add Langfuse/LangSmith adapters.
 2. Preserve original streaming chunk timing and latency envelopes.
-3. Add a GitHub PR report and release gate.
+3. Cut and pin the first public V1 release.
 
 ## Product direction
 
