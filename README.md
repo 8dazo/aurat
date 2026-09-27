@@ -46,37 +46,40 @@ Point an OpenAI-compatible client at `http://127.0.0.1:4010/v1`.
 
 ### Turn known-good behavior into a contract
 
-After recording representative scenarios:
-
 ```bash
 node src/cli.js contract
-```
-
-Aurat writes `.aurat/contracts.json`. Each request fingerprint receives a behavioral contract covering status, streaming mode, response kind, tool calls, finish reasons, and structured JSON top-level keys.
-
-Later, record the same scenarios against a changed prompt/model and run:
-
-```bash
 node src/cli.js verify
 ```
 
-Example regression:
+Aurat snapshots status, streaming mode, response kind, tool calls, finish reasons, and structured JSON shape. `verify` exits non-zero when a contracted scenario changes.
 
-```text
-Aurat contract: FAIL
-Scenarios: 12 checked, 11 passed, 1 failed
+### Inject provider failures without a provider
 
-POST /v1/chat/completions
-  ✗ kind: expected "tool_calls", got "text"
-  ✗ toolCalls: expected ["search_docs"], got []
-  ✗ finishReasons: expected ["tool_calls"], got ["stop"]
+Aurat can deterministically exercise error-handling paths:
+
+```bash
+# OpenAI-shaped 429 + Retry-After
+node src/cli.js proxy --mode replay --fault rate-limit
+
+# Provider 500
+node src/cli.js proxy --mode replay --fault server-error
+
+# HTTP 200 with invalid JSON
+node src/cli.js proxy --mode replay --fault malformed-json
+
+# Simulate a broken connection
+node src/cli.js proxy --mode replay --fault connection-reset
+
+# Add 2 seconds before normal replay/provider handling.
+# Set this above your application's timeout to exercise timeout logic.
+node src/cli.js proxy --mode replay --delay-ms 2000
 ```
 
-`aurat verify` exits non-zero on contracted behavior changes, so it can be used as a CI gate. New request fingerprints are surfaced as uncontracted scenarios without failing V1 verification automatically.
+Built-in faults never call the upstream provider and expose `x-aurat-fault` when an HTTP response is returned.
 
 ### Ignore volatile request data
 
-Exact replay is the safe default. When your application adds request IDs, timestamps, or similar metadata, create `.aurat/config.json`:
+Exact replay is the safe default. For request IDs, timestamps, or similar metadata, create `.aurat/config.json`:
 
 ```json
 {
@@ -107,6 +110,8 @@ AURAT_UPSTREAM_API_KEY=...
 AURAT_STORE_PATH=.aurat/recordings.jsonl
 AURAT_CONFIG_PATH=.aurat/config.json
 AURAT_CONTRACT_PATH=.aurat/contracts.json
+AURAT_FAULT=rate-limit
+AURAT_DELAY_MS=0
 ```
 
 `OPENAI_API_KEY` is used as the upstream key when `AURAT_UPSTREAM_API_KEY` is not set.
@@ -117,16 +122,16 @@ AURAT_CONTRACT_PATH=.aurat/contracts.json
 2. Run the application again with the provider disconnected.
 3. Preserve streaming/event payloads and tool-call-shaped responses.
 4. Tolerate explicitly configured volatile request data.
-5. Turn known-good responses into versioned behavioral contracts.
-6. Fail CI when the same scenario changes its important behavior.
+5. Turn known-good responses into behavioral contracts.
+6. Fail CI when contracted behavior changes.
+7. Exercise provider failure, parser, retry, and latency paths deterministically.
 
 ## Next milestones
 
 1. Preserve original streaming chunk timing and latency envelopes.
-2. Add failure injection for timeouts, rate limits, malformed outputs, and tool errors.
-3. Add OpenTelemetry/Langfuse/LangSmith trace ingestion.
-4. Add a small live-canary runner for prompt/model drift detection.
-5. Add a GitHub PR report and release gate.
+2. Add OpenTelemetry/Langfuse/LangSmith trace ingestion.
+3. Add a small live-canary runner for prompt/model drift detection.
+4. Add a GitHub PR report and release gate.
 
 ## Product direction
 

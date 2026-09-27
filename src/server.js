@@ -1,6 +1,8 @@
 import { once } from "node:events";
 import http from "node:http";
 import { Readable } from "node:stream";
+import { setTimeout as sleep } from "node:timers/promises";
+import { getFaultProfile } from "./faults.js";
 import { fingerprintRequest } from "./fingerprint.js";
 import { RecordingStore } from "./store.js";
 
@@ -81,15 +83,33 @@ async function streamAndRecord(body, res) {
   return Buffer.concat(chunks);
 }
 
+function injectFault(res, fault, fingerprint, mode) {
+  if (fault.disconnect) {
+    res.destroy(new Error("Aurat injected a connection reset"));
+    return;
+  }
+
+  res.statusCode = fault.status;
+  writeHeaders(res, fault.headers ?? {});
+  res.setHeader("x-aurat-mode", mode);
+  res.setHeader("x-aurat-replay", "bypass");
+  res.setHeader("x-aurat-fingerprint", fingerprint);
+  res.setHeader("x-aurat-fault", fault.name);
+  res.end(fault.body ?? "");
+}
+
 export function createAuratServer(options) {
   const store = new RecordingStore(options.storePath);
   const matching = options.matching ?? {};
+  const fault = getFaultProfile(options.fault);
+  const delayMs = options.delayMs ?? 0;
+  if (!Number.isFinite(delayMs) || delayMs < 0) throw new Error("Aurat delayMs must be a non-negative number");
 
   return http.createServer(async (req, res) => {
     try {
       const path = req.url ?? "/";
       if (req.method === "GET" && (path === "/health" || path === "/_aurat/health")) {
-        json(res, 200, { ok: true, mode: options.mode, upstream: options.upstreamBaseUrl });
+        json(res, 200, { ok: true, mode: options.mode, upstream: options.upstreamBaseUrl, fault: fault?.name ?? null, delayMs });
         return;
       }
 
@@ -97,6 +117,12 @@ export function createAuratServer(options) {
       const rawBody = await readRequestBody(req);
       const body = parseBody(rawBody);
       const fingerprint = fingerprintRequest({ method, path, body }, matching);
+
+      if (delayMs > 0) await sleep(delayMs);
+      if (fault) {
+        injectFault(res, fault, fingerprint, options.mode);
+        return;
+      }
 
       if (options.mode === "replay") {
         const recording = await store.find(fingerprint);
@@ -149,9 +175,6 @@ export function createAuratServer(options) {
       }
 
       if (options.mode === "record") {
-        // Keep streaming bytes flowing to the client, but persist the recording
-        // before ending the HTTP response. This makes "response complete" a
-        // deterministic durability boundary for tests that immediately replay.
         const recordedBody = await streamAndRecord(upstream.body, res);
         await store.append({
           ...recordingBase,
