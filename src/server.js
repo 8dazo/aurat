@@ -72,6 +72,7 @@ function json(res, status, body) {
 
 export function createAuratServer(options) {
   const store = new RecordingStore(options.storePath);
+  const matching = options.matching ?? {};
 
   return http.createServer(async (req, res) => {
     try {
@@ -84,7 +85,7 @@ export function createAuratServer(options) {
       const method = req.method ?? "GET";
       const rawBody = await readRequestBody(req);
       const body = parseBody(rawBody);
-      const fingerprint = fingerprintRequest({ method, path, body });
+      const fingerprint = fingerprintRequest({ method, path, body }, matching);
 
       if (options.mode === "replay") {
         const recording = await store.find(fingerprint);
@@ -117,10 +118,21 @@ export function createAuratServer(options) {
       res.setHeader("x-aurat-replay", "bypass");
       res.setHeader("x-aurat-fingerprint", fingerprint);
 
+      const recordingBase = {
+        version: 2,
+        fingerprint,
+        createdAt: new Date().toISOString(),
+        request: { method, path, body },
+        matching: {
+          ignoreBodyPaths: matching.ignoreBodyPaths ?? [],
+          ignoreQueryParams: matching.ignoreQueryParams ?? [],
+        },
+      };
+
       if (!upstream.body) {
         res.end();
         if (options.mode === "record") {
-          await store.append({ version: 2, fingerprint, createdAt: new Date().toISOString(), request: { method, path, body }, response: { status: upstream.status, headers, ...encodeBody(Buffer.alloc(0)) } });
+          await store.append({ ...recordingBase, response: { status: upstream.status, headers, ...encodeBody(Buffer.alloc(0)) } });
         }
         return;
       }
@@ -128,10 +140,7 @@ export function createAuratServer(options) {
       if (options.mode === "record") {
         const [clientStream, recordStream] = upstream.body.tee();
         const persist = new Response(recordStream).arrayBuffer().then((arrayBuffer) => store.append({
-          version: 2,
-          fingerprint,
-          createdAt: new Date().toISOString(),
-          request: { method, path, body },
+          ...recordingBase,
           response: { status: upstream.status, headers, ...encodeBody(Buffer.from(arrayBuffer)) },
         })).catch((error) => console.error("[aurat] failed to persist recording", error));
 

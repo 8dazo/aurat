@@ -114,3 +114,45 @@ test("record mode preserves SSE bytes, upstream auth, and provider base paths", 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("matching rules replay across volatile request metadata", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "aurat-server-"));
+  const storePath = join(dir, "recordings.jsonl");
+  let calls = 0;
+  const upstream = http.createServer((_req, res) => {
+    calls += 1;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ id: "stable-result", choices: [] }));
+  });
+  const upstreamPort = await listen(upstream);
+  const matching = { ignoreBodyPaths: ["metadata.request_id"], ignoreQueryParams: ["trace"] };
+  const recorder = await startAuratServer({ mode: "record", port: 0, upstreamBaseUrl: `http://127.0.0.1:${upstreamPort}`, storePath, matching });
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${recorder.port}/v1/chat/completions?trace=first`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "gpt-test", metadata: { request_id: "one", tenant: "acme" }, messages: [] }),
+    });
+    assert.equal(response.status, 200);
+    await response.text();
+    assert.equal(calls, 1);
+  } finally {
+    await close(recorder.server);
+  }
+
+  const replayer = await startAuratServer({ mode: "replay", port: 0, upstreamBaseUrl: "http://127.0.0.1:1", storePath, matching });
+  try {
+    const response = await fetch(`http://127.0.0.1:${replayer.port}/v1/chat/completions?trace=second`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "gpt-test", metadata: { request_id: "two", tenant: "acme" }, messages: [] }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-aurat-replay"), "hit");
+    assert.deepEqual(await response.json(), { id: "stable-result", choices: [] });
+    assert.equal(calls, 1);
+  } finally {
+    await close(replayer.server);
+    await close(upstream);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
