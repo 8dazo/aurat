@@ -1,3 +1,4 @@
+import { once } from "node:events";
 import http from "node:http";
 import { Readable } from "node:stream";
 import { fingerprintRequest } from "./fingerprint.js";
@@ -70,6 +71,16 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+async function streamAndRecord(body, res) {
+  const chunks = [];
+  for await (const chunk of Readable.fromWeb(body)) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    chunks.push(buffer);
+    if (!res.write(buffer)) await once(res, "drain");
+  }
+  return Buffer.concat(chunks);
+}
+
 export function createAuratServer(options) {
   const store = new RecordingStore(options.storePath);
   const matching = options.matching ?? {};
@@ -130,22 +141,23 @@ export function createAuratServer(options) {
       };
 
       if (!upstream.body) {
-        res.end();
         if (options.mode === "record") {
           await store.append({ ...recordingBase, response: { status: upstream.status, headers, ...encodeBody(Buffer.alloc(0)) } });
         }
+        res.end();
         return;
       }
 
       if (options.mode === "record") {
-        const [clientStream, recordStream] = upstream.body.tee();
-        const persist = new Response(recordStream).arrayBuffer().then((arrayBuffer) => store.append({
+        // Keep streaming bytes flowing to the client, but persist the recording
+        // before ending the HTTP response. This makes "response complete" a
+        // deterministic durability boundary for tests that immediately replay.
+        const recordedBody = await streamAndRecord(upstream.body, res);
+        await store.append({
           ...recordingBase,
-          response: { status: upstream.status, headers, ...encodeBody(Buffer.from(arrayBuffer)) },
-        })).catch((error) => console.error("[aurat] failed to persist recording", error));
-
-        Readable.fromWeb(clientStream).pipe(res);
-        await persist;
+          response: { status: upstream.status, headers, ...encodeBody(recordedBody) },
+        });
+        res.end();
         return;
       }
 
