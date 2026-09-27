@@ -5,6 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { getFaultProfile } from "./faults.js";
 import { fingerprintRequest } from "./fingerprint.js";
 import { RecordingStore } from "./store.js";
+import { buildUpstreamUrl } from "./upstream.js";
 
 const HOP_BY_HOP_HEADERS = new Set([
   "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
@@ -42,20 +43,6 @@ function writeHeaders(res, headers) {
   for (const [name, value] of Object.entries(headers)) {
     if (!HOP_BY_HOP_HEADERS.has(name.toLowerCase())) res.setHeader(name, value);
   }
-}
-
-function upstreamUrl(baseUrl, requestPath) {
-  const base = new URL(baseUrl);
-  const incoming = new URL(requestPath, "http://aurat.local");
-  const basePath = base.pathname.replace(/\/$/, "");
-
-  if (!basePath || basePath === "/" || incoming.pathname.startsWith(`${basePath}/`) || incoming.pathname === basePath) {
-    base.pathname = incoming.pathname;
-  } else {
-    base.pathname = `${basePath}/${incoming.pathname.replace(/^\//, "")}`;
-  }
-  base.search = incoming.search;
-  return base;
 }
 
 function encodeBody(buffer) {
@@ -140,7 +127,7 @@ export function createAuratServer(options) {
         return;
       }
 
-      const target = upstreamUrl(options.upstreamBaseUrl, path);
+      const target = buildUpstreamUrl(options.upstreamBaseUrl, path);
       const upstream = await fetch(target, {
         method,
         headers: copyRequestHeaders(req, options.upstreamApiKey),
