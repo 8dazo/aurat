@@ -4,55 +4,90 @@
 
 Aurat.ai turns real AI application behavior into deterministic tests so teams can catch regressions before shipping—without calling the real model on every CI run.
 
-## The problem
+## Why
 
-AI applications are difficult to test like normal software. Teams usually choose between:
+AI applications are difficult to test like normal software. Teams usually choose between calling real models in CI—which is nondeterministic, slower, rate-limited, and can become expensive at scale—or using hand-written mocks that rarely behave like production.
 
-- calling real models in CI, which is nondeterministic, slower, rate-limited, and can become expensive at scale; or
-- using hand-written mocks, which are deterministic but rarely behave like production.
+Aurat's first job is narrower: make the model dependency reproducible.
 
-As agents become multi-step systems with tool calls, structured outputs, retries, streaming, and state, this gap becomes more painful.
+## V1: record once, replay deterministically
 
-## What Aurat does
+Aurat is an OpenAI-compatible proxy with three modes:
 
-Aurat consumes traces from existing observability systems such as LangSmith, Langfuse, Braintrust, or OpenTelemetry, plus an optional Aurat SDK. It turns representative production behavior into versioned behavioral contracts and virtualized CI scenarios.
+```text
+live    app -> Aurat -> provider
+record  app -> Aurat -> provider + cassette
+replay  app -> Aurat -> cassette only
+```
 
-A typical workflow:
+### Quick start
 
-1. Observe real model/agent traces.
-2. Build representative behavioral contracts.
-3. Run the application against a deterministic virtual model/tool environment in CI.
-4. Run a smaller live canary suite against the real provider to detect model or prompt drift.
-5. Gate releases when important behavior regresses.
+```bash
+npm install
 
-## The wedge
+# Record real responses
+OPENAI_API_KEY=sk-... npm run dev -- --mode record
+```
 
-Aurat is not another tracing dashboard and not just an LLM mock server.
+Point your existing OpenAI-compatible client at:
 
-Existing observability tools can remain the system of record. Aurat sits underneath them as the deterministic execution and contract-testing layer.
+```text
+http://127.0.0.1:8787/v1
+```
 
-**Keep your tracing stack. Aurat turns production behavior into reliable CI tests.**
+For example:
 
-## Initial MVP
+```ts
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: "http://127.0.0.1:8787/v1",
+});
+```
 
-- OpenAI-compatible API support first
-- record / replay / verify modes
-- streaming, structured outputs, and tool-call support
-- behavioral contracts generated from real traces
-- deterministic local + CI runtime
-- GitHub Actions integration
-- failure injection for timeouts, rate limits, malformed outputs, and tool errors
-- small live-canary suite for drift detection
-- connectors for OpenTelemetry, Langfuse, and LangSmith
+Captured interactions are stored under `.aurat/cassettes/`.
 
-## Product principle
+Then replay with no provider calls:
 
-Do not try to perfectly simulate model intelligence in V1. First make AI-dependent software reproducible and testable. Progress from record/replay → behavioral contracts → generalized replay → synthetic failures → learned simulation.
+```bash
+npm run dev -- --mode replay
+```
+
+The same request receives the recorded provider response. An unknown request fails explicitly with `aurat_replay_miss` instead of silently calling the provider.
+
+Health check:
+
+```bash
+curl http://127.0.0.1:8787/_aurat/health
+```
+
+## Configuration
+
+```text
+AURAT_MODE=live|record|replay
+AURAT_PORT=8787
+AURAT_UPSTREAM_URL=https://api.openai.com
+AURAT_CASSETTE_DIR=.aurat
+AURAT_UPSTREAM_API_KEY=...
+```
+
+`OPENAI_API_KEY` is also accepted as the upstream key.
+
+## Product direction
+
+V1 is intentionally not a claim that Aurat can perfectly simulate model intelligence. The progression is:
+
+```text
+record/replay
+    -> behavioral contracts
+    -> generalized replay
+    -> synthetic failures
+    -> learned simulation
+```
+
+Aurat will integrate with LangSmith, Langfuse, Braintrust, and OpenTelemetry rather than asking teams to replace their tracing stack.
+
+See [`docs/V1.md`](docs/V1.md), [`docs/PRODUCT.md`](docs/PRODUCT.md), and [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Build workflow
 
 We use Garry Tan's **gstack** workflow for product thinking, engineering planning, review, QA, and shipping. See `AGENTS.md` and `CLAUDE.md`.
-
-## Status
-
-Pre-MVP / validation. The immediate goal is to integrate with real AI teams, reproduce their current CI pain, and catch at least one real regression that would otherwise have shipped.
