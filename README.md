@@ -21,15 +21,19 @@ Aurat is not another tracing dashboard and not just an LLM mock server. Existing
 
 ## Working V1
 
-Aurat currently provides a dependency-free OpenAI-compatible proxy with three modes:
+Aurat now has two complementary test loops:
 
 ```text
-live    app -> Aurat -> provider
-record  app -> Aurat -> provider + recording
-replay  app -> Aurat -> recording only
+every commit                 nightly / pre-release
+────────────                 ─────────────────────
+record once                  small live sample
+     ↓                             ↓
+replay locally / CI          real provider
+     ↓                             ↓
+contract verify              same contract
+     ↓                             ↓
+zero provider calls          model/prompt drift
 ```
-
-`replay` is strict: an unknown request returns `aurat_replay_miss` and never silently reaches the real provider. Request fingerprints are stable across JSON object-key ordering and can explicitly ignore configured volatile fields.
 
 ### Record and replay
 
@@ -42,7 +46,7 @@ OPENAI_API_KEY=sk-... AURAT_MODE=record node src/cli.js proxy
 AURAT_MODE=replay node src/cli.js proxy
 ```
 
-Point an OpenAI-compatible client at `http://127.0.0.1:4010/v1`.
+Point an OpenAI-compatible client at `http://127.0.0.1:4010/v1`. Replay is strict: an unknown request returns `aurat_replay_miss` and never silently reaches the provider.
 
 ### Turn known-good behavior into a contract
 
@@ -53,25 +57,35 @@ node src/cli.js verify
 
 Aurat snapshots status, streaming mode, response kind, tool calls, finish reasons, and structured JSON shape. `verify` exits non-zero when a contracted scenario changes.
 
-### Inject provider failures without a provider
+### Run a small live canary
 
-Aurat can deterministically exercise error-handling paths:
+Canaries intentionally make real provider calls. The default is capped at 10 scenarios, selected deterministically by fingerprint so repeated runs cover the same slice:
 
 ```bash
-# OpenAI-shaped 429 + Retry-After
+OPENAI_API_KEY=sk-... node src/cli.js canary --limit 5
+```
+
+Example:
+
+```text
+[aurat] live canary: 5/128 contracted scenarios
+Aurat live canary: FAIL
+Scenarios: 5 checked, 4 passed, 1 failed
+
+POST /v1/chat/completions
+  ✗ kind: expected "tool_calls", got "text"
+  ✗ toolCalls: expected ["search_docs"], got []
+```
+
+This is the complement to replay: run hundreds or thousands of deterministic scenarios without provider calls on every commit, then use a small live suite to detect model/provider drift.
+
+### Inject provider failures without a provider
+
+```bash
 node src/cli.js proxy --mode replay --fault rate-limit
-
-# Provider 500
 node src/cli.js proxy --mode replay --fault server-error
-
-# HTTP 200 with invalid JSON
 node src/cli.js proxy --mode replay --fault malformed-json
-
-# Simulate a broken connection
 node src/cli.js proxy --mode replay --fault connection-reset
-
-# Add 2 seconds before normal replay/provider handling.
-# Set this above your application's timeout to exercise timeout logic.
 node src/cli.js proxy --mode replay --delay-ms 2000
 ```
 
@@ -110,6 +124,7 @@ AURAT_UPSTREAM_API_KEY=...
 AURAT_STORE_PATH=.aurat/recordings.jsonl
 AURAT_CONFIG_PATH=.aurat/config.json
 AURAT_CONTRACT_PATH=.aurat/contracts.json
+AURAT_CANARY_LIMIT=10
 AURAT_FAULT=rate-limit
 AURAT_DELAY_MS=0
 ```
@@ -125,13 +140,13 @@ AURAT_DELAY_MS=0
 5. Turn known-good responses into behavioral contracts.
 6. Fail CI when contracted behavior changes.
 7. Exercise provider failure, parser, retry, and latency paths deterministically.
+8. Check a capped live subset against the same contract for model/prompt drift.
 
 ## Next milestones
 
-1. Preserve original streaming chunk timing and latency envelopes.
-2. Add OpenTelemetry/Langfuse/LangSmith trace ingestion.
-3. Add a small live-canary runner for prompt/model drift detection.
-4. Add a GitHub PR report and release gate.
+1. Import traces from OpenTelemetry, then add Langfuse/LangSmith adapters.
+2. Preserve original streaming chunk timing and latency envelopes.
+3. Add a GitHub PR report and release gate.
 
 ## Product direction
 
