@@ -1,0 +1,16 @@
+{
+  "name": "aurat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "aurat": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test src/*.test.js",
+    "start": "node src/cli.js proxy"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
