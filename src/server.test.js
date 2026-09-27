@@ -65,14 +65,16 @@ test("replay mode returns a deterministic miss", async () => {
   }
 });
 
-test("record mode preserves SSE bytes and replay does not call upstream", async () => {
+test("record mode preserves SSE bytes, upstream auth, and provider base paths", async () => {
   const dir = await mkdtemp(join(tmpdir(), "aurat-server-"));
   const storePath = join(dir, "recordings.jsonl");
   let calls = 0;
   let authHeader;
+  let upstreamPath;
   const upstream = http.createServer((req, res) => {
     calls += 1;
     authHeader = req.headers.authorization;
+    upstreamPath = req.url;
     res.statusCode = 200;
     res.setHeader("content-type", "text/event-stream");
     res.write('data: {"choices":[{"delta":{"content":"hel"}}]}\n\n');
@@ -80,7 +82,7 @@ test("record mode preserves SSE bytes and replay does not call upstream", async 
   });
   const upstreamPort = await listen(upstream);
   const recorder = await startAuratServer({
-    mode: "record", port: 0, upstreamBaseUrl: `http://127.0.0.1:${upstreamPort}`,
+    mode: "record", port: 0, upstreamBaseUrl: `http://127.0.0.1:${upstreamPort}/api`,
     upstreamApiKey: "real-provider-key", storePath,
   });
   const body = { model: "gpt-test", stream: true, messages: [{ role: "user", content: "hello" }] };
@@ -92,6 +94,7 @@ test("record mode preserves SSE bytes and replay does not call upstream", async 
     });
     assert.equal(await first.text(), expected);
     assert.equal(authHeader, "Bearer real-provider-key");
+    assert.equal(upstreamPath, "/api/v1/chat/completions");
     assert.equal(calls, 1);
   } finally {
     await close(recorder.server);

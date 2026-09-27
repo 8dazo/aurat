@@ -13,6 +13,12 @@ AI applications are difficult to test like normal software. Teams usually choose
 
 As agents become multi-step systems with tool calls, structured outputs, retries, streaming, and state, this gap becomes more painful.
 
+## The wedge
+
+Aurat is not another tracing dashboard and not just an LLM mock server. Existing observability tools can remain the system of record; Aurat is the deterministic execution and contract-testing layer that sits underneath them.
+
+**Keep your tracing stack. Aurat turns production behavior into reliable CI tests.**
+
 ## Working V1
 
 Aurat currently provides a dependency-free OpenAI-compatible proxy with three modes:
