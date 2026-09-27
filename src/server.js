@@ -6,6 +6,7 @@ import { RecordingStore } from "./store.js";
 const HOP_BY_HOP_HEADERS = new Set([
   "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
   "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length",
+  "content-encoding",
 ]);
 
 async function readRequestBody(req) {
@@ -20,12 +21,13 @@ function parseBody(buffer) {
   try { return JSON.parse(text); } catch { return text; }
 }
 
-function copyRequestHeaders(req) {
+function copyRequestHeaders(req, upstreamApiKey) {
   const headers = new Headers();
   for (const [name, value] of Object.entries(req.headers)) {
     if (HOP_BY_HOP_HEADERS.has(name.toLowerCase()) || value === undefined) continue;
     headers.set(name, Array.isArray(value) ? value.join(", ") : value);
   }
+  if (upstreamApiKey) headers.set("authorization", `Bearer ${upstreamApiKey}`);
   return headers;
 }
 
@@ -39,41 +41,71 @@ function writeHeaders(res, headers) {
   }
 }
 
+function upstreamUrl(baseUrl, requestPath) {
+  const base = new URL(baseUrl);
+  const incoming = new URL(requestPath, "http://aurat.local");
+  const basePath = base.pathname.replace(/\/$/, "");
+
+  if (!basePath || basePath === "/" || incoming.pathname.startsWith(`${basePath}/`) || incoming.pathname === basePath) {
+    base.pathname = incoming.pathname;
+  } else {
+    base.pathname = `${basePath}/${incoming.pathname.replace(/^\//, "")}`;
+  }
+  base.search = incoming.search;
+  return base;
+}
+
+function encodeBody(buffer) {
+  return { body: buffer.toString("base64"), bodyEncoding: "base64" };
+}
+
+function decodeBody(response) {
+  if (response.bodyEncoding === "base64") return Buffer.from(response.body ?? "", "base64");
+  return Buffer.from(response.body ?? "", "utf8");
+}
+
+function json(res, status, body) {
+  res.statusCode = status;
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(body));
+}
+
 export function createAuratServer(options) {
   const store = new RecordingStore(options.storePath);
 
   return http.createServer(async (req, res) => {
     try {
-      if (req.url === "/health") {
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ ok: true, mode: options.mode }));
+      const path = req.url ?? "/";
+      if (req.method === "GET" && (path === "/health" || path === "/_aurat/health")) {
+        json(res, 200, { ok: true, mode: options.mode, upstream: options.upstreamBaseUrl });
         return;
       }
 
       const method = req.method ?? "GET";
-      const path = req.url ?? "/";
       const rawBody = await readRequestBody(req);
       const body = parseBody(rawBody);
       const fingerprint = fingerprintRequest({ method, path, body });
 
       if (options.mode === "replay") {
         const recording = await store.find(fingerprint);
+        res.setHeader("x-aurat-mode", "replay");
+        res.setHeader("x-aurat-fingerprint", fingerprint);
         if (!recording) {
-          res.statusCode = 409;
-          res.setHeader("content-type", "application/json");
-          res.end(JSON.stringify({ error: { type: "aurat_replay_miss", message: "No recording matched this request.", fingerprint } }));
+          res.setHeader("x-aurat-replay", "miss");
+          json(res, 409, { error: { type: "aurat_replay_miss", message: "No recording matched this request.", fingerprint } });
           return;
         }
         res.statusCode = recording.response.status;
         writeHeaders(res, recording.response.headers);
-        res.end(recording.response.body);
+        res.setHeader("x-aurat-replay", "hit");
+        res.end(decodeBody(recording.response));
         return;
       }
 
-      const upstreamUrl = new URL(path, options.upstreamBaseUrl);
-      const upstream = await fetch(upstreamUrl, {
+      const target = upstreamUrl(options.upstreamBaseUrl, path);
+      const upstream = await fetch(target, {
         method,
-        headers: copyRequestHeaders(req),
+        headers: copyRequestHeaders(req, options.upstreamApiKey),
         body: ["GET", "HEAD"].includes(method.toUpperCase()) ? undefined : rawBody,
         redirect: "manual",
       });
@@ -81,33 +113,40 @@ export function createAuratServer(options) {
       const headers = responseHeaders(upstream);
       res.statusCode = upstream.status;
       writeHeaders(res, headers);
+      res.setHeader("x-aurat-mode", options.mode);
+      res.setHeader("x-aurat-replay", "bypass");
+      res.setHeader("x-aurat-fingerprint", fingerprint);
 
       if (!upstream.body) {
         res.end();
         if (options.mode === "record") {
-          await store.append({ version: 1, fingerprint, createdAt: new Date().toISOString(), request: { method, path, body }, response: { status: upstream.status, headers, body: "" } });
+          await store.append({ version: 2, fingerprint, createdAt: new Date().toISOString(), request: { method, path, body }, response: { status: upstream.status, headers, ...encodeBody(Buffer.alloc(0)) } });
         }
         return;
       }
 
       if (options.mode === "record") {
         const [clientStream, recordStream] = upstream.body.tee();
-        void new Response(recordStream).text().then((recordedBody) => store.append({
-          version: 1,
+        const persist = new Response(recordStream).arrayBuffer().then((arrayBuffer) => store.append({
+          version: 2,
           fingerprint,
           createdAt: new Date().toISOString(),
           request: { method, path, body },
-          response: { status: upstream.status, headers, body: recordedBody },
+          response: { status: upstream.status, headers, ...encodeBody(Buffer.from(arrayBuffer)) },
         })).catch((error) => console.error("[aurat] failed to persist recording", error));
+
         Readable.fromWeb(clientStream).pipe(res);
+        await persist;
         return;
       }
 
       Readable.fromWeb(upstream.body).pipe(res);
     } catch (error) {
-      res.statusCode = 502;
-      res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({ error: { type: "aurat_proxy_error", message: error instanceof Error ? error.message : String(error) } }));
+      if (res.headersSent) {
+        res.destroy(error instanceof Error ? error : undefined);
+        return;
+      }
+      json(res, 502, { error: { type: "aurat_proxy_error", message: error instanceof Error ? error.message : String(error) } });
     }
   });
 }
