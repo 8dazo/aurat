@@ -1,0 +1,45 @@
+name: Aurat AI Regression Gate
+description: Verify Aurat behavioral contracts and fail CI when AI application behavior regresses.
+author: Aurat.ai
+
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  recordings:
+    description: Path to the Aurat JSONL recording store in the caller repository.
+    required: false
+    default: .aurat/recordings.jsonl
+  contract:
+    description: Path to the Aurat behavioral contract in the caller repository.
+    required: false
+    default: .aurat/contracts.json
+
+runs:
+  using: composite
+  steps:
+    - name: Verify AI behavior
+      shell: bash
+      env:
+        AURAT_STORE_PATH: ${{ inputs.recordings }}
+        AURAT_CONTRACT_PATH: ${{ inputs.contract }}
+      run: |
+        set +e
+        output="$(node "$GITHUB_ACTION_PATH/src/cli.js" verify 2>&1)"
+        status=$?
+        set -e
+
+        printf '%s\n' "$output"
+
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          {
+            echo "## Aurat AI regression gate"
+            echo
+            echo '```text'
+            printf '%s\n' "$output"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+        exit "$status"

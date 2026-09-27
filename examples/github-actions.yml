@@ -1,0 +1,19 @@
+name: AI regression gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  aurat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # During the alpha use @main. Pin a release/tag once V1 is cut.
+      - name: Verify AI behavioral contracts
+        uses: 8dazo/aurat@main
+        with:
+          recordings: .aurat/recordings.jsonl
+          contract: .aurat/contracts.json
