@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="426" viewBox="0 0 1200 426" role="img" aria-labelledby="title desc">
+<title id="title">Same fixtures. Changed code. A caught regression.</title><desc id="desc">Excerpts from the ticket-agent demo: the baseline passes. Calling create_ticket twice fails because the expected count is one and the actual count is two.</desc>
+<rect width="1200" height="426" rx="18" fill="#101416"/>
+<g font-family="Arial,Helvetica,sans-serif"><text x="44" y="46" fill="#a4bcba" font-size="12" letter-spacing="3">A REGRESSION YOU CAN REPRODUCE</text><text x="44" y="88" fill="#f3f4f1" font-size="28" font-weight="600">Same fixtures. Changed code. A useful failure.</text></g>
+<rect x="44" y="120" width="536" height="235" rx="10" fill="#171e21" stroke="#334044"/>
+<rect x="600" y="120" width="556" height="235" rx="10" fill="#171e21" stroke="#334044"/>
+<g font-family="Arial,Helvetica,sans-serif" font-size="12" letter-spacing="1.5"><text x="68" y="151" fill="#aec4c1">BASELINE / ONE TICKET</text><text x="624" y="151" fill="#ddbcac">MUTATION / DUPLICATE ACTION</text></g>
+<g font-family="'DejaVu Sans Mono',Consolas,monospace" font-size="15">
+<text x="68" y="197" fill="#f3f4f1">await createTicket(args);</text>
+<text x="624" y="197" fill="#f3f4f1">await createTicket(args);</text>
+<text x="624" y="223" fill="#e9b89f">await createTicket(args);</text>
+<path d="M68 245H556M624 245H1132" stroke="#334044"/>
+<text x="68" y="279" fill="#bbddcb">PASS create-ticket-once</text>
+<text x="68" y="309" fill="#9eacb0">Coverage: model 1/1, tools 1/1</text>
+<text x="624" y="279" fill="#f0bca4">FAIL create-ticket-once</text>
+<text x="624" y="309" fill="#e4e7e3">tool.create_ticket.count: Expected 1; got 2</text>
+</g>
+<text x="44" y="393" fill="#8d9da1" font-family="Arial,Helvetica,sans-serif" font-size="13">Actual demo excerpts, with timing and additional diagnostics omitted. Reproduce both cases with npm test.</text>
+</svg>
