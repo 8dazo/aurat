@@ -44,7 +44,7 @@ export async function runCanary({
   limit = 10,
   fetchImpl = fetch,
 }) {
-  if (!contract || contract.version !== 1 || !Array.isArray(contract.scenarios)) {
+  if (!contract || ![1, 2].includes(contract.version) || !Array.isArray(contract.scenarios)) {
     throw new Error("Unsupported or invalid Aurat contract");
   }
   if (!Number.isInteger(limit) || limit <= 0) {
@@ -80,6 +80,7 @@ export async function runCanary({
         headers: requestHeaders(baseline, upstreamApiKey),
         body: ["GET", "HEAD"].includes(method.toUpperCase()) ? undefined : requestBody(baseline),
         redirect: "manual",
+        signal: AbortSignal.timeout(30000),
       });
       const bytes = Buffer.from(await response.arrayBuffer());
       candidateRecordings.push({
@@ -131,5 +132,5 @@ export async function runCanary({
 export function formatCanaryResult(result) {
   const verificationText = formatVerification(result.verification)
     .replace(/^Aurat contract:/, "Aurat live canary:");
-  return `[aurat] live canary: ${result.selected}/${result.total} contracted scenarios\n${verificationText}`;
+  return `[aurat] baseline drift canary (original recorded prompts): ${result.selected}/${result.total} contracted scenarios\n${verificationText}`;
 }

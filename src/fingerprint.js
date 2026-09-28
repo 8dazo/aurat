@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { redact, redactPath } from "./redact.js";
 
 function pathMatches(pattern, path) {
   const segments = pattern.split(".");
@@ -20,7 +21,7 @@ function normalize(value, options, path = []) {
       Object.entries(value)
         // Kept as a built-in compatibility rule: SDKs can add stream_options
         // without changing the semantic model request.
-        .filter(([key]) => key !== "stream_options")
+        .filter(([key]) => !(path.length === 0 && key === "stream_options"))
         .filter(([key]) => !ignored([...path, key], options.ignoreBodyPaths))
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([key, child]) => [key, normalize(child, options, [...path, key])]),
@@ -54,8 +55,8 @@ export function fingerprintRequest({ method, path, body }, matching = {}) {
   };
   const payload = [
     method.toUpperCase(),
-    normalizePath(path, options.ignoreQueryParams),
-    canonicalJson(body, options),
+    normalizePath(redactPath(path), options.ignoreQueryParams),
+    canonicalJson(redact(body), options),
   ].join("\n");
   return createHash("sha256").update(payload).digest("hex");
 }

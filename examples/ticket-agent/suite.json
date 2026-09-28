@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "scenarios": [{
+    "id": "create-ticket-once",
+    "command": ["node", "agent.mjs"],
+    "recordings": "model.jsonl",
+    "tools": [{ "name": "create_ticket", "args": { "title": "Broken login", "priority": "normal" }, "result": { "id": "T-42" } }],
+    "expect": {
+      "outputEquals": { "ticketId": "T-42", "status": "created" },
+      "tools": [{ "name": "create_ticket", "count": 1, "arguments": { "title": "Broken login", "priority": "normal" } }],
+      "toolOrder": ["create_ticket"]
+    }
+  }]
+}

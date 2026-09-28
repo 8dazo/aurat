@@ -1,6 +1,6 @@
 {
   "name": "aurat",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -8,9 +8,28 @@
   },
   "scripts": {
     "test": "node --test src/*.test.js",
-    "start": "node src/cli.js proxy"
+    "start": "node src/cli.js proxy",
+    "demo": "node src/cli.js test --suite examples/ticket-agent/suite.json"
   },
   "engines": {
-    "node": ">=20"
-  }
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@mswjs/interceptors": "0.45.5",
+    "ajv": "8.20.0"
+  },
+  "exports": {
+    "./testing": {
+      "types": "./src/testing.d.ts",
+      "default": "./src/testing.js"
+    }
+  },
+  "files": [
+    "src",
+    "!src/*.test.js",
+    "examples/ticket-agent",
+    "docs/scenario-runner.md",
+    "docs/implementation-review.md",
+    "README.md"
+  ]
 }

@@ -6,6 +6,7 @@ import { getFaultProfile } from "./faults.js";
 import { fingerprintRequest } from "./fingerprint.js";
 import { RecordingStore } from "./store.js";
 import { buildUpstreamUrl } from "./upstream.js";
+import { redact, redactPayload } from "./redact.js";
 
 const HOP_BY_HOP_HEADERS = new Set([
   "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
@@ -15,7 +16,12 @@ const HOP_BY_HOP_HEADERS = new Set([
 
 async function readRequestBody(req) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > 8 * 1024 * 1024) throw new Error("Aurat request exceeds 8 MiB limit");
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
   return Buffer.concat(chunks);
 }
 
@@ -46,7 +52,14 @@ function writeHeaders(res, headers) {
 }
 
 function encodeBody(buffer) {
-  return { body: buffer.toString("base64"), bodyEncoding: "base64" };
+  const text = buffer.toString("utf8");
+  // Keep safe payload bytes intact; rewrite only payloads containing secrets.
+  const scrubbed = redactPayload(text);
+  let safe = text;
+  try {
+    if (JSON.stringify(JSON.parse(text)) !== scrubbed) safe = scrubbed;
+  } catch { safe = scrubbed; }
+  return { body: Buffer.from(safe).toString("base64"), bodyEncoding: "base64" };
 }
 
 function decodeBody(response) {
@@ -62,8 +75,11 @@ function json(res, status, body) {
 
 async function streamAndRecord(body, res) {
   const chunks = [];
+  let size = 0;
   for await (const chunk of Readable.fromWeb(body)) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > 32 * 1024 * 1024) throw new Error("Aurat response exceeds 32 MiB recording limit");
     chunks.push(buffer);
     if (!res.write(buffer)) await once(res, "drain");
   }
@@ -86,7 +102,7 @@ function injectFault(res, fault, fingerprint, mode) {
 }
 
 export function createAuratServer(options) {
-  const store = new RecordingStore(options.storePath);
+  const store = options.store ?? new RecordingStore(options.storePath);
   const matching = options.matching ?? {};
   const fault = getFaultProfile(options.fault);
   const delayMs = options.delayMs ?? 0;
@@ -112,7 +128,8 @@ export function createAuratServer(options) {
       }
 
       if (options.mode === "replay") {
-        const recording = await store.find(fingerprint);
+        const recording = await store.consume(fingerprint);
+        options.onReplay?.({ fingerprint, hit: Boolean(recording) });
         res.setHeader("x-aurat-mode", "replay");
         res.setHeader("x-aurat-fingerprint", fingerprint);
         if (!recording) {
@@ -133,6 +150,7 @@ export function createAuratServer(options) {
         headers: copyRequestHeaders(req, options.upstreamApiKey),
         body: ["GET", "HEAD"].includes(method.toUpperCase()) ? undefined : rawBody,
         redirect: "manual",
+        signal: AbortSignal.timeout(options.timeoutMs ?? 30000),
       });
 
       const headers = responseHeaders(upstream);
@@ -146,7 +164,7 @@ export function createAuratServer(options) {
         version: 2,
         fingerprint,
         createdAt: new Date().toISOString(),
-        request: { method, path, body },
+        request: { method, path, body: redact(body) },
         matching: {
           ignoreBodyPaths: matching.ignoreBodyPaths ?? [],
           ignoreQueryParams: matching.ignoreQueryParams ?? [],
@@ -155,7 +173,7 @@ export function createAuratServer(options) {
 
       if (!upstream.body) {
         if (options.mode === "record") {
-          await store.append({ ...recordingBase, response: { status: upstream.status, headers, ...encodeBody(Buffer.alloc(0)) } });
+          await store.append({ ...recordingBase, response: { status: upstream.status, headers: redact(headers), ...encodeBody(Buffer.alloc(0)) } });
         }
         res.end();
         return;
@@ -165,7 +183,7 @@ export function createAuratServer(options) {
         const recordedBody = await streamAndRecord(upstream.body, res);
         await store.append({
           ...recordingBase,
-          response: { status: upstream.status, headers, ...encodeBody(recordedBody) },
+          response: { status: upstream.status, headers: redact(headers), ...encodeBody(recordedBody) },
         });
         res.end();
         return;

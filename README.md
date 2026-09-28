@@ -1,226 +1,84 @@
-# Aurat.ai
+# Aurat
 
-**CI for AI agents.**
+**Catch agent workflow regressions before merging.**
 
-Aurat.ai turns real AI application behavior into deterministic tests so teams can catch regressions before shipping—without calling the real model on every CI run.
+Aurat runs your changed Node application against recorded model responses and tool results. Assert what matters: the correct action, correct arguments, exactly once, in the right order, with a valid final output. Keep your tracing stack.
 
-<p align="center">
-  <img src="docs/readme/aurat-overview.svg" alt="Aurat architecture overview" width="100%" />
-</p>
+## Try it
 
-## The problem
-
-AI applications are difficult to test like normal software. Teams usually choose between:
-
-- calling real models in CI, which is nondeterministic, slower, rate-limited, and can become expensive at scale; or
-- using hand-written mocks that are deterministic but rarely behave like production.
-
-As agents become multi-step systems with tool calls, structured outputs, retries, streaming, and state, this gap becomes more painful.
-
-## The wedge
-
-Aurat is not another tracing dashboard and not just an LLM mock server. Existing observability tools can remain the system of record; Aurat is the deterministic execution and contract-testing layer that sits underneath them.
-
-**Keep your tracing stack. Aurat turns production behavior into reliable CI tests.**
-
-## Working V1
-
-Aurat has two complementary test loops:
-
-<p align="center">
-  <img src="docs/readme/record-contract-replay.svg" alt="Aurat record contract replay lifecycle" width="100%" />
-</p>
-
-```text
-every commit                 nightly / pre-release
-────────────                 ─────────────────────
-record/import once           small live sample
-     ↓                             ↓
-replay locally / CI          real provider
-     ↓                             ↓
-contract verify              same contract
-     ↓                             ↓
-zero provider calls          model/prompt drift
-```
-
-### Record and replay
-
-Requires Node.js 20+.
+Requires Node 22 or newer. This is a private developer preview, not a published npm release.
 
 ```bash
+npm ci
 npm test
-
-OPENAI_API_KEY=sk-... AURAT_MODE=record node src/cli.js proxy
-AURAT_MODE=replay node src/cli.js proxy
+npm run demo
 ```
 
-Point an OpenAI-compatible client at `http://127.0.0.1:4010/v1`. Replay is strict: an unknown request returns `aurat_replay_miss` and never silently reaches the provider.
+The demo executes an agent that receives a recorded model tool call, creates a ticket through a replayed tool, and reports the result. No provider credentials are required. Tests mutate that application to create a duplicate ticket, send incorrect arguments, and report an incorrect result; each mutation must fail against the original fixtures.
 
-### Bootstrap from existing OpenTelemetry traces
+## Add your application
 
-<p align="center">
-  <img src="docs/readme/otel-import.svg" alt="OpenTelemetry traces imported into Aurat recordings" width="100%" />
-</p>
-
-If the team already captures GenAI telemetry, Aurat can turn replayable OTLP JSON spans into its recording format:
+Install this repository as a local dependency (`npm install /path/to/aurat`), or install its `npm pack` tarball. Then:
 
 ```bash
-node src/cli.js import-otel traces.json
-node src/cli.js inspect
-node src/cli.js contract
+npx aurat init .aurat
+npx aurat test --suite .aurat/suite.json
 ```
 
-The importer uses current `gen_ai.input.messages`, `gen_ai.output.messages`, system-instruction, tool-definition, request-model, and related GenAI attributes. It normalizes supported chat spans into OpenAI-compatible requests/responses, including tool calls and streaming SSE.
+`init` copies the runnable demo without overwriting existing files. Replace its command and fixtures with your application. Paths in a suite are relative to the suite file; commands are argument arrays, without a shell. A scenario gets a fresh process, proxy and fixture cursor.
 
-Message content is opt-in in OpenTelemetry and can contain sensitive information. Aurat skips incomplete spans instead of inventing fixtures, and prints the reason for every skipped class. Review/sanitize imported telemetry before committing recordings. See [`docs/OPENTELEMETRY.md`](docs/OPENTELEMETRY.md).
+```js
+import { wrapTool, reportOutput } from 'aurat/testing';
 
-### Turn known-good behavior into a contract
-
-<p align="center">
-  <img src="docs/readme/behavioral-contracts.svg" alt="Aurat behavioral contract checks" width="100%" />
-</p>
-
-```bash
-node src/cli.js contract
-node src/cli.js verify
+const createTicket = wrapTool('create_ticket', args => realTicketClient.create(args));
+// Configure your OpenAI-compatible client with OPENAI_BASE_URL.
+const ticket = await createTicket({ title: 'Broken login', priority: 'normal' });
+reportOutput({ ticketId: ticket.id, status: 'created' });
 ```
 
-Aurat snapshots status, streaming mode, response kind, tool calls, finish reasons, and structured JSON shape. `verify` exits non-zero when a contracted scenario changes.
+During `aurat test`, wrapped tools return reviewed fixtures instead of invoking their implementations. Unwrapped database, filesystem and native calls are outside that guarantee. Use a disposable application workspace.
 
-### Gate pull requests with GitHub Actions
+See [the working suite](examples/ticket-agent/suite.json) and [scenario guide](docs/scenario-runner.md).
 
-Commit reviewed recordings and contracts, then add:
+## What fails CI
+
+- Unrecorded or exhausted model requests; missing configured fixtures; unconsumed interactions.
+- Tool name, argument, occurrence count or ordering changes.
+- Invalid nested output schemas or incorrect expected output.
+- Application crashes, timeouts, excessive logs, or a missing Node HTTP guard.
+- HTTP requests outside the local replay proxy, even if the application catches the error.
+- Empty suites and unknown scenario selections.
+
+Reports distinguish `PASS`, `FAIL`, `INCOMPLETE`, and `INFRA_ERROR`. Only all-PASS returns exit code zero. JSON reports include the Git revision, assertion failures and model/tool coverage.
+
+## GitHub Actions
+
+Install your application's dependencies before invoking the action. Pin the action to a reviewed commit SHA when adopting it:
 
 ```yaml
-name: AI regression gate
-
-on: [pull_request]
-
-jobs:
-  aurat:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: 8dazo/aurat@main
-        with:
-          recordings: .aurat/recordings.jsonl
-          contract: .aurat/contracts.json
+- uses: actions/checkout@v4
+- uses: actions/setup-node@v4
+  with:
+    node-version: 22
+- run: npm ci
+- uses: 8dazo/aurat@<reviewed-commit-sha>
+  with:
+    suite: .aurat/suite.json
+    report: .aurat/report.json
 ```
 
-The action runs the deterministic verifier, writes the regression diff into the GitHub Actions job summary, and fails the check when a contracted behavior changes. During alpha, `@main` is the supported reference; V1 will be pinned to a release tag before public distribution.
+The action executes your application. The old `recordings` and `contract` action inputs have been replaced by `suite` and `report`.
 
-### Run a small live canary
+## Existing proxy workflow
 
-Canaries intentionally make real provider calls. The default is capped at 10 scenarios, selected deterministically by fingerprint:
+`aurat proxy --mode record|replay|live`, `inspect`, `contract`, `verify`, `canary`, and `import-otel` remain available. Run `aurat --help` for environment configuration. Replay now consumes each matching response once, in capture order; repeated requests need repeated fixture occurrences.
 
-```bash
-OPENAI_API_KEY=sk-... node src/cli.js canary --limit 5
-```
+`verify` compares saved artifacts, not application execution. New v2 contracts check tool arguments and nested JSON types. Existing v1 contracts remain readable with a warning. `canary` probes the original baseline prompts against a live provider; it does not run the changed application and incurs provider usage. OTel conversion reconstructs model interactions from captured message content; it cannot recover absent tool executions, exact stream timing or uncaptured state.
 
-Example:
+## Boundaries
 
-```text
-[aurat] live canary: 5/128 contracted scenarios
-Aurat live canary: FAIL
-Scenarios: 5 checked, 4 passed, 1 failed
+The initial target is single-process Node agents using OpenAI-compatible HTTP and explicitly wrapped tools. MSW interceptors guard Node fetch and HTTP; this is **not an OS sandbox**. Raw sockets, native database clients, subprocesses that remove the preload, filesystem access and hostile code are not isolated. Provider keys are not inherited by the scenario, but local credential files remain accessible. Run sensitive suites in an isolated CI/container environment with external networking disabled.
 
-POST /v1/chat/completions
-  ✗ kind: expected "tool_calls", got "text"
-  ✗ toolCalls: expected ["search_docs"], got []
-```
+SSE data is replayed as an aggregated recorded payload, not with original timing. Tool capture requires sequential calls. Model replay preserves occurrence order per fingerprint, not global cross-request scheduling. Secret redaction covers configured key names and recognizable tokens; it is not a PII detector. Review and sanitize fixtures before committing them. Sanitized fixtures can change application behavior; use synthetic identifiers where necessary.
 
-This is the complement to replay: run hundreds or thousands of deterministic scenarios without provider calls on every commit, then use a small live suite to detect model/provider drift.
-
-### Inject provider failures without a provider
-
-<p align="center">
-  <img src="docs/readme/fault-injection.svg" alt="Aurat deterministic provider fault injection" width="100%" />
-</p>
-
-```bash
-node src/cli.js proxy --mode replay --fault rate-limit
-node src/cli.js proxy --mode replay --fault server-error
-node src/cli.js proxy --mode replay --fault malformed-json
-node src/cli.js proxy --mode replay --fault connection-reset
-node src/cli.js proxy --mode replay --delay-ms 2000
-```
-
-Built-in faults never call the upstream provider and expose `x-aurat-fault` when an HTTP response is returned.
-
-### Ignore volatile request data
-
-Exact replay is the safe default. For request IDs, timestamps, or similar metadata, create `.aurat/config.json`:
-
-```json
-{
-  "match": {
-    "ignoreBodyPaths": ["metadata.request_id", "metadata.timestamp", "messages.*.id"],
-    "ignoreQueryParams": ["trace_id"]
-  }
-}
-```
-
-`*` matches one JSON path segment, including array indexes. The same matching rules must be used while recording and replaying.
-
-### Inspect captured traffic
-
-```bash
-node src/cli.js inspect
-```
-
-This summarizes recorded endpoints, models, and observed OpenAI-style tool calls.
-
-## Configuration
-
-```text
-AURAT_MODE=live|record|replay
-AURAT_PORT=4010
-AURAT_UPSTREAM_BASE_URL=https://api.openai.com
-AURAT_UPSTREAM_API_KEY=...
-AURAT_STORE_PATH=.aurat/recordings.jsonl
-AURAT_CONFIG_PATH=.aurat/config.json
-AURAT_CONTRACT_PATH=.aurat/contracts.json
-AURAT_CANARY_LIMIT=10
-AURAT_FAULT=rate-limit
-AURAT_DELAY_MS=0
-```
-
-`OPENAI_API_KEY` is used as the upstream key when `AURAT_UPSTREAM_API_KEY` is not set.
-
-## What V1 proves
-
-1. Capture a real interaction once—or import a replayable GenAI trace from an existing OTel stack.
-2. Run the application again with the provider disconnected.
-3. Preserve streaming/event payloads and tool-call-shaped responses.
-4. Tolerate explicitly configured volatile request data.
-5. Turn known-good responses into behavioral contracts.
-6. Fail CI when contracted behavior changes.
-7. Exercise provider failure, parser, retry, and latency paths deterministically.
-8. Check a capped live subset against the same contract for model/prompt drift.
-9. Drop the verifier into a GitHub pull-request check with no custom CI glue.
-
-## Next milestones
-
-1. Add Langfuse and LangSmith adapters on top of the normalized trace-import layer.
-2. Preserve original streaming chunk timing and latency envelopes.
-3. Cut and pin the first public V1 release.
-
-## Product direction
-
-Aurat integrates with LangSmith, Langfuse, Braintrust, and OpenTelemetry rather than asking teams to replace their tracing stack.
-
-```text
-record/replay
-    -> behavioral contracts
-    -> generalized replay
-    -> synthetic failures
-    -> learned simulation
-```
-
-## Build workflow
-
-We use Garry Tan's **gstack** workflow for product thinking, engineering planning, review, QA, and shipping. See `AGENTS.md` and `CLAUDE.md`.
-
-## Status
-
-V1 runtime in active development. The immediate product goal is to integrate with real AI teams, reproduce their current CI pain, and catch at least one real regression that would otherwise have shipped.
+Dependencies: Ajv for JSON Schema and MSW's interceptors for HTTP interception. See [reuse and implementation notes](docs/implementation-review.md). No paid cloud control plane, learned simulator or broad framework adapter matrix is claimed.
