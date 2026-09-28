@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="580" viewBox="0 0 1200 580" role="img" aria-labelledby="title desc">
+<title id="title">The Aurat replay workflow</title><desc id="desc">A scenario executes changed application code. Its model calls and wrapped tools use separate recorded fixtures. Assertions combine output, tool events and fixture coverage into a CI report.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="#869999" stroke-width="1.5"/></marker></defs>
+<rect width="1200" height="580" rx="18" fill="#101416"/>
+<g font-family="Arial,Helvetica,sans-serif">
+<text x="48" y="51" fill="#a4bcba" font-size="12" letter-spacing="3">THE REPLAY BOUNDARY</text>
+<text x="48" y="93" fill="#f3f4f1" font-size="29" font-weight="600">Your code runs. External responses replay.</text>
+<text x="48" y="122" fill="#94a2a5" font-size="15">One scenario. A fresh process. Explicit evidence of what changed.</text>
+<rect x="48" y="184" width="237" height="140" rx="10" fill="#1a2023" stroke="#354045"/>
+<text x="70" y="216" fill="#9db3b3" font-size="11" letter-spacing="2">01 / SCENARIO</text>
+<text x="70" y="249" fill="#f3f4f1" font-size="21">Versioned fixtures</text>
+<text x="70" y="277" fill="#9ca9ad" font-size="14">Command + expected outcome</text>
+<text x="70" y="299" fill="#9ca9ad" font-size="14">Reviewed model + tool records</text>
+<rect x="343" y="184" width="260" height="140" rx="10" fill="#202d2e" stroke="#82a6a2"/>
+<text x="365" y="216" fill="#bbd6d1" font-size="11" letter-spacing="2">02 / EXECUTION</text>
+<text x="365" y="249" fill="#f3f4f1" font-size="21">Changed application</text>
+<text x="365" y="277" fill="#adc3c0" font-size="14">Fresh Node process</text>
+<text x="365" y="299" fill="#adc3c0" font-size="14">HTTP guard + tool wrappers</text>
+<rect x="697" y="164" width="455" height="85" rx="10" fill="#1a2023" stroke="#354045"/>
+<text x="719" y="197" fill="#f3f4f1" font-size="18">Model requests → local replay proxy</text>
+<text x="719" y="225" fill="#9ca9ad" font-size="14">Matching responses consumed in occurrence order</text>
+<rect x="697" y="274" width="455" height="85" rx="10" fill="#1a2023" stroke="#354045"/>
+<text x="719" y="307" fill="#f3f4f1" font-size="18">Wrapped tools → recorded results</text>
+<text x="719" y="335" fill="#9ca9ad" font-size="14">Name + arguments checked before returning a fixture</text>
+<g fill="none" stroke="#869999" stroke-width="1.5" marker-end="url(#arrow)"><path d="M285 254H333"/><path d="M603 235H648V207H687"/><path d="M603 272H648V316H687"/></g>
+<rect x="343" y="423" width="809" height="95" rx="10" fill="#1a2023" stroke="#354045"/>
+<text x="365" y="452" fill="#9db3b3" font-size="11" letter-spacing="2">03 / ASSERTIONS + COVERAGE</text>
+<text x="365" y="486" fill="#f3f4f1" font-size="20">Output · arguments · count · order · fixture consumption</text>
+<g fill="none" stroke="#869999" stroke-width="1.5" marker-end="url(#arrow)"><path d="M473 324V413"/><path d="M924 359V413"/></g>
+<text x="48" y="457" fill="#a4bcba" font-size="12" letter-spacing="1">CI REPORT</text>
+<text x="48" y="486" fill="#f3f4f1" font-size="18">PASS or a specific failure</text>
+<path d="M343 470H302" fill="none" stroke="#869999" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="48" y="552" fill="#829196" font-size="13">HTTP interception is not an OS sandbox. Unwrapped side effects remain outside the replay boundary.</text>
+</g></svg>

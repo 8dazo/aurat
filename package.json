@@ -30,6 +30,7 @@
     "examples/ticket-agent",
     "docs/scenario-runner.md",
     "docs/implementation-review.md",
-    "README.md"
+    "README.md",
+    "docs/brand"
   ]
 }
