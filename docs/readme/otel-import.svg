@@ -1,0 +1,22 @@
+<svg width="1200" height="620" viewBox="0 0 1200 620" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="1200" height="620" rx="28" fill="#0B1020"/>
+<text x="60" y="84" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="40" font-weight="700">Bring your existing traces</text>
+<text x="60" y="120" fill="#94A3B8" font-family="Arial,sans-serif" font-size="20">Normalize OpenTelemetry GenAI spans into replayable Aurat scenarios</text>
+<rect x="80" y="210" width="250" height="150" rx="22" fill="#111827" stroke="#334155"/>
+<text x="205" y="270" text-anchor="middle" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="28" font-weight="700">OTLP JSON</text>
+<text x="205" y="305" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="18">GenAI spans + messages</text>
+<rect x="450" y="180" width="300" height="210" rx="22" fill="#0F1E36" stroke="#3B82F6" stroke-width="2"/>
+<text x="600" y="240" text-anchor="middle" fill="#DBEAFE" font-family="Arial,sans-serif" font-size="30" font-weight="700">Aurat Importer</text>
+<text x="600" y="284" text-anchor="middle" fill="#93C5FD" font-family="Arial,sans-serif" font-size="19">messages • model • tools</text>
+<text x="600" y="315" text-anchor="middle" fill="#93C5FD" font-family="Arial,sans-serif" font-size="19">streaming • tool calls • skips</text>
+<rect x="500" y="345" width="200" height="34" rx="10" fill="#172554"/>
+<text x="600" y="367" text-anchor="middle" fill="#DBEAFE" font-family="monospace" font-size="14">import-otel traces.json</text>
+<rect x="870" y="210" width="250" height="150" rx="22" fill="#111827" stroke="#334155"/>
+<text x="995" y="270" text-anchor="middle" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="28" font-weight="700">Recordings</text>
+<text x="995" y="305" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="18">ready for replay + contracts</text>
+<path d="M330 285H420" stroke="#64748B" stroke-width="5" stroke-linecap="round"/><polygon points="420,285 405,276 405,294" fill="#64748B"/>
+<path d="M750 285H840" stroke="#64748B" stroke-width="5" stroke-linecap="round"/><polygon points="840,285 825,276 825,294" fill="#64748B"/>
+<rect x="240" y="440" width="720" height="90" rx="18" fill="#111827" stroke="#334155"/>
+<text x="600" y="478" text-anchor="middle" fill="#FDE68A" font-family="Arial,sans-serif" font-size="20" font-weight="700">Explicit about missing data</text>
+<text x="600" y="508" text-anchor="middle" fill="#E5E7EB" font-family="Arial,sans-serif" font-size="18">If message content was not captured, Aurat skips the trace instead of inventing a fixture.</text>
+</svg>

@@ -1,0 +1,27 @@
+<svg width="1200" height="620" viewBox="0 0 1200 620" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="1200" height="620" rx="28" fill="#0B1020"/>
+<text x="60" y="84" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="40" font-weight="700">Behavioral contracts</text>
+<text x="60" y="120" fill="#94A3B8" font-family="Arial,sans-serif" font-size="20">Verify meaningful behavior instead of brittle token-for-token output</text>
+<rect x="60" y="170" width="1080" height="390" rx="24" fill="#111827" stroke="#334155"/>
+<rect x="100" y="215" width="300" height="285" rx="20" fill="#0F172A" stroke="#334155"/>
+<text x="250" y="260" text-anchor="middle" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="27" font-weight="700">Contract checks</text>
+<text x="130" y="310" fill="#93C5FD" font-family="Arial,sans-serif" font-size="19">✓ status + content type</text>
+<text x="130" y="347" fill="#93C5FD" font-family="Arial,sans-serif" font-size="19">✓ streaming mode</text>
+<text x="130" y="384" fill="#93C5FD" font-family="Arial,sans-serif" font-size="19">✓ response kind</text>
+<text x="130" y="421" fill="#93C5FD" font-family="Arial,sans-serif" font-size="19">✓ tool calls</text>
+<text x="130" y="458" fill="#93C5FD" font-family="Arial,sans-serif" font-size="19">✓ finish reasons</text>
+<rect x="450" y="215" width="300" height="285" rx="20" fill="#0F172A" stroke="#334155"/>
+<text x="600" y="260" text-anchor="middle" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="27" font-weight="700">Structured output</text>
+<text x="480" y="310" fill="#86EFAC" font-family="Arial,sans-serif" font-size="19">✓ JSON key shape</text>
+<text x="480" y="347" fill="#86EFAC" font-family="Arial,sans-serif" font-size="19">✓ missing scenarios</text>
+<text x="480" y="384" fill="#86EFAC" font-family="Arial,sans-serif" font-size="19">✓ unexpected scenarios</text>
+<text x="480" y="421" fill="#86EFAC" font-family="Arial,sans-serif" font-size="19">✓ deterministic diff</text>
+<text x="480" y="458" fill="#86EFAC" font-family="Arial,sans-serif" font-size="19">✓ CI exit code</text>
+<rect x="800" y="215" width="290" height="285" rx="20" fill="#0F172A" stroke="#334155"/>
+<text x="945" y="260" text-anchor="middle" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="27" font-weight="700">Regression example</text>
+<text x="830" y="310" fill="#FCA5A5" font-family="Arial,sans-serif" font-size="18">✗ tool_call → plain text</text>
+<text x="830" y="347" fill="#FCA5A5" font-family="Arial,sans-serif" font-size="18">✗ JSON shape changed</text>
+<text x="830" y="384" fill="#FCA5A5" font-family="Arial,sans-serif" font-size="18">✗ stream unexpectedly off</text>
+<text x="830" y="421" fill="#FCA5A5" font-family="Arial,sans-serif" font-size="18">✗ finish reason changed</text>
+<text x="830" y="458" fill="#FCA5A5" font-family="Arial,sans-serif" font-size="18">✗ provider started erroring</text>
+</svg>

@@ -1,0 +1,18 @@
+<svg width="1200" height="620" viewBox="0 0 1200 620" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="1200" height="620" rx="28" fill="#0B1020"/>
+<text x="60" y="84" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="40" font-weight="700">Deterministic fault injection</text>
+<text x="60" y="120" fill="#94A3B8" font-family="Arial,sans-serif" font-size="20">Exercise failure paths without touching the real provider</text>
+<rect x="60" y="170" width="1080" height="380" rx="24" fill="#111827" stroke="#334155"/>
+<rect x="95" y="215" width="200" height="95" rx="18" fill="#3F1D1D" stroke="#7F1D1D"/>
+<text x="195" y="258" text-anchor="middle" fill="#FECACA" font-family="Arial,sans-serif" font-size="24" font-weight="700">429</text><text x="195" y="287" text-anchor="middle" fill="#FCA5A5" font-family="Arial,sans-serif" font-size="18">rate limit</text>
+<rect x="325" y="215" width="200" height="95" rx="18" fill="#3F1D1D" stroke="#7F1D1D"/>
+<text x="425" y="258" text-anchor="middle" fill="#FECACA" font-family="Arial,sans-serif" font-size="24" font-weight="700">500</text><text x="425" y="287" text-anchor="middle" fill="#FCA5A5" font-family="Arial,sans-serif" font-size="18">server error</text>
+<rect x="555" y="215" width="200" height="95" rx="18" fill="#422006" stroke="#92400E"/>
+<text x="655" y="258" text-anchor="middle" fill="#FDE68A" font-family="Arial,sans-serif" font-size="23" font-weight="700">Malformed</text><text x="655" y="287" text-anchor="middle" fill="#FCD34D" font-family="Arial,sans-serif" font-size="18">bad JSON</text>
+<rect x="785" y="215" width="200" height="95" rx="18" fill="#1E293B" stroke="#334155"/>
+<text x="885" y="258" text-anchor="middle" fill="#E2E8F0" font-family="Arial,sans-serif" font-size="23" font-weight="700">Disconnect</text><text x="885" y="287" text-anchor="middle" fill="#CBD5E1" font-family="Arial,sans-serif" font-size="18">connection reset</text>
+<rect x="380" y="355" width="440" height="120" rx="20" fill="#0F172A" stroke="#334155"/>
+<text x="600" y="398" text-anchor="middle" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="26" font-weight="700">Injected latency</text>
+<text x="600" y="432" text-anchor="middle" fill="#93C5FD" font-family="Arial,sans-serif" font-size="19">test retries, backoff, cancellation and timeout behavior</text>
+<text x="600" y="510" text-anchor="middle" fill="#64748B" font-family="monospace" font-size="16">aurat proxy --mode replay --fault rate-limit --delay-ms 800</text>
+</svg>
