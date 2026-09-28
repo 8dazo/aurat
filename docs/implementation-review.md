@@ -26,9 +26,9 @@ Reviewed the gstack source and applied its problem/scope, engineering, review an
 - Design: runnable init example, one command, failure-specific messages, machine-readable report.
 - Review: fixed concurrent fixture reservation, unexpected/empty passes, secret persistence, missing configuration handling, duplicated tool occurrence indices and concurrent capture ambiguity. Commands use argv arrays; action inputs cross through environment variables.
 - QA: real subprocess demo; mutations for duplicate actions, wrong arguments and incorrect output; coverage omissions, crashes/timeouts, missing fixtures, credential inheritance, and blocked fetch/HTTP with zero test-server hits.
-- Release: private 0.2.0 package, lockfile, Node 20/22/24 CI matrix, documentation of action/replay migration. No public publish or deployment.
+- Release: private 0.2.0 package, lockfile, Node 22/24 CI matrix, documentation of action/replay migration. No public publish or deployment.
 - Retro: artifact comparison alone cannot prove application behavior. Keep a changed-code failure demo in CI and keep live-provider drift separate from offline application regression.
 
 ## Known limits
 
-Node-only cooperative instrumentation; not a security sandbox. Single tool-owning process. Sequential tool capture. SSE timing is not reconstructed. OTel import does not capture missing tool/state boundaries. Redaction is a secrets baseline, not full PII protection. Linux Node 24 is the locally exercised environment; CI must establish the additional Node versions. No latency/cost benchmark claims.
+Node-only cooperative instrumentation; not a security sandbox. Single tool-owning process. Sequential tool capture. SSE timing is not reconstructed. OTel import does not capture missing tool/state boundaries. Redaction is a secrets baseline, not full PII protection. Linux Node 24 is the locally exercised environment. Initial CI passed Node 22/24 but exposed the interceptor dependency’s Node 22 minimum; the engine floor and runtime guard now explicitly reject Node 20. No latency/cost benchmark claims.

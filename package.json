@@ -12,7 +12,7 @@
     "demo": "node src/cli.js test --suite examples/ticket-agent/suite.json"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "dependencies": {
     "@mswjs/interceptors": "0.45.5",

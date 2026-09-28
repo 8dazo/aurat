@@ -55,6 +55,7 @@ Reports contain sanitized outputs and argument values, which may still include b
 
 ## Migration from 0.1
 
+- Node 22+ is required for the HTTP interceptor. Unsupported runtimes fail before application execution.
 - `npm ci` is now required: Aurat uses Ajv and MSW interceptors.
 - Replay consumes occurrences instead of returning the last response indefinitely.
 - Generate v2 contracts to enable detailed tool-argument and nested schema checks. V1 compatibility remains explicit and weaker.

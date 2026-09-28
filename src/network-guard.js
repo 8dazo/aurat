@@ -1,3 +1,4 @@
+if (Number(process.versions.node.split(".")[0]) < 22) throw new Error("Aurat HTTP guard requires Node 22 or newer");
 import { BatchInterceptor } from "@mswjs/interceptors";
 import { ClientRequestInterceptor } from "@mswjs/interceptors/ClientRequest";
 import { FetchInterceptor } from "@mswjs/interceptors/fetch";

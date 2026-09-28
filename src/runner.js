@@ -127,6 +127,7 @@ async function runScenario(scenario, root) {
 }
 
 export async function runSuite(path, { scenarioId } = {}) {
+  if (Number(process.versions.node.split(".")[0]) < 22) throw new Error("Aurat application replay requires Node 22 or newer (HTTP interceptor requirement)");
   const absolute = resolve(path);
   const suite = await readSuite(absolute);
   const selected = scenarioId ? suite.scenarios.filter((s) => s.id === scenarioId) : suite.scenarios;

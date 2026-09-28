@@ -6,7 +6,7 @@ Aurat runs your changed Node application against recorded model responses and to
 
 ## Try it
 
-Requires Node 20 or newer. This is a private developer preview, not a published npm release.
+Requires Node 22 or newer. This is a private developer preview, not a published npm release.
 
 ```bash
 npm ci
