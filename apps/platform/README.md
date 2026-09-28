@@ -2,6 +2,8 @@
 
 A private workspace for agent regression evidence, plus the Aurat landing page.
 
+[Open the private preview](https://aurat-workspace.d3c1.chatgpt.site) · [Explore example reports](https://aurat-workspace.d3c1.chatgpt.site/app?demo=1)
+
 ## What works
 
 - Ten original brand images and a responsive, researched landing page.

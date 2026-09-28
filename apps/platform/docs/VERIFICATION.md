@@ -20,3 +20,9 @@
 The example JSON preserves actual scenario evidence but omits process output and identifies the source revision corresponding to each tested code state. The fixed run was captured before the equivalent remote commit was created; it is a local reproduction, not the downloaded CI artifact.
 
 Production build completed successfully. All 50 core Aurat tests also pass.
+
+## Built Worker smoke check
+
+The actual production Worker was loaded into a local Miniflare/D1 runtime with isolated test identity headers. Landing, docs, and every dashboard view returned 200; an unknown route returned 404 and anonymous workspace API access returned 401. Project creation, real report import, passing baseline selection, and a fresh workspace read all passed. This verifies server rendering and storage flow, not browser hydration or visual appearance.
+
+Private deployment succeeded at https://aurat-workspace.d3c1.chatgpt.site .
