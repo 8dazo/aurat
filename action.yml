@@ -1,45 +1,36 @@
-name: Aurat AI Regression Gate
-description: Verify Aurat behavioral contracts and fail CI when AI application behavior regresses.
+name: Aurat Application Regression Gate
+description: Execute changed Node application code against model and tool fixtures.
 author: Aurat.ai
-
 branding:
   icon: shield
   color: purple
-
 inputs:
-  recordings:
-    description: Path to the Aurat JSONL recording store in the caller repository.
-    required: false
-    default: .aurat/recordings.jsonl
-  contract:
-    description: Path to the Aurat behavioral contract in the caller repository.
-    required: false
-    default: .aurat/contracts.json
-
+  suite:
+    description: Scenario manifest in the caller repository.
+    default: .aurat/suite.json
+  report:
+    description: JSON report path in the caller repository.
+    default: .aurat/report.json
 runs:
   using: composite
   steps:
-    - name: Verify AI behavior
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Install Aurat dependencies
+      shell: bash
+      run: npm ci --ignore-scripts --prefix "$GITHUB_ACTION_PATH"
+    - name: Run application scenarios
       shell: bash
       env:
-        AURAT_STORE_PATH: ${{ inputs.recordings }}
-        AURAT_CONTRACT_PATH: ${{ inputs.contract }}
+        AURAT_SUITE: ${{ inputs.suite }}
+        AURAT_REPORT: ${{ inputs.report }}
       run: |
         set +e
-        output="$(node "$GITHUB_ACTION_PATH/src/cli.js" verify 2>&1)"
+        node "$GITHUB_ACTION_PATH/src/cli.js" test --suite "$AURAT_SUITE" --report "$AURAT_REPORT"
         status=$?
         set -e
-
-        printf '%s\n' "$output"
-
         if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-          {
-            echo "## Aurat AI regression gate"
-            echo
-            echo '```text'
-            printf '%s\n' "$output"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          printf '### Aurat application regression\n\nExit code: %s. See step logs and the JSON report for scenario evidence.\n' "$status" >> "$GITHUB_STEP_SUMMARY"
         fi
-
         exit "$status"

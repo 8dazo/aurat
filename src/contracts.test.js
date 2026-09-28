@@ -25,7 +25,7 @@ test("buildContract captures tool-call behavior for each scenario", () => {
   });
 
   const contract = buildContract([baseline]);
-  assert.equal(contract.version, 1);
+  assert.equal(contract.version, 2);
   assert.equal(contract.scenarios.length, 1);
   assert.deepEqual(contract.scenarios[0].expected, {
     status: 200,
@@ -35,6 +35,8 @@ test("buildContract captures tool-call behavior for each scenario", () => {
     toolCalls: ["search_docs"],
     finishReasons: ["tool_calls"],
     jsonKeys: [],
+    malformed: false,
+    toolDetails: [{ name: "search_docs", arguments: {} }],
   });
 });
 
