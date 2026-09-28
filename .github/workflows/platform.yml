@@ -25,3 +25,5 @@ jobs:
       - run: pnpm test
       - run: pnpm typecheck
       - run: pnpm build
+      - name: Build public Render frontend
+        run: node scripts/build-render.mjs

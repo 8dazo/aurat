@@ -1,0 +1,20 @@
+services:
+  - type: web
+    runtime: static
+    name: aurat
+    repo: https://github.com/8dazo/aurat
+    branch: main
+    buildCommand: cd apps/platform && npx --yes pnpm@11.25.0 install --frozen-lockfile && node scripts/build-render.mjs
+    staticPublishPath: apps/platform/.render-build/out
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.0
+      - key: SKIP_INSTALL_DEPS
+        value: "true"
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
