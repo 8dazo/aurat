@@ -4,6 +4,10 @@
 
 Aurat.ai turns real AI application behavior into deterministic tests so teams can catch regressions before shipping—without calling the real model on every CI run.
 
+<p align="center">
+  <img src="docs/readme/aurat-overview.svg" alt="Aurat architecture overview" width="100%" />
+</p>
+
 ## The problem
 
 AI applications are difficult to test like normal software. Teams usually choose between:
@@ -22,6 +26,10 @@ Aurat is not another tracing dashboard and not just an LLM mock server. Existing
 ## Working V1
 
 Aurat has two complementary test loops:
+
+<p align="center">
+  <img src="docs/readme/record-contract-replay.svg" alt="Aurat record contract replay lifecycle" width="100%" />
+</p>
 
 ```text
 every commit                 nightly / pre-release
@@ -50,6 +58,10 @@ Point an OpenAI-compatible client at `http://127.0.0.1:4010/v1`. Replay is stric
 
 ### Bootstrap from existing OpenTelemetry traces
 
+<p align="center">
+  <img src="docs/readme/otel-import.svg" alt="OpenTelemetry traces imported into Aurat recordings" width="100%" />
+</p>
+
 If the team already captures GenAI telemetry, Aurat can turn replayable OTLP JSON spans into its recording format:
 
 ```bash
@@ -63,6 +75,10 @@ The importer uses current `gen_ai.input.messages`, `gen_ai.output.messages`, sys
 Message content is opt-in in OpenTelemetry and can contain sensitive information. Aurat skips incomplete spans instead of inventing fixtures, and prints the reason for every skipped class. Review/sanitize imported telemetry before committing recordings. See [`docs/OPENTELEMETRY.md`](docs/OPENTELEMETRY.md).
 
 ### Turn known-good behavior into a contract
+
+<p align="center">
+  <img src="docs/readme/behavioral-contracts.svg" alt="Aurat behavioral contract checks" width="100%" />
+</p>
 
 ```bash
 node src/cli.js contract
@@ -116,6 +132,10 @@ POST /v1/chat/completions
 This is the complement to replay: run hundreds or thousands of deterministic scenarios without provider calls on every commit, then use a small live suite to detect model/provider drift.
 
 ### Inject provider failures without a provider
+
+<p align="center">
+  <img src="docs/readme/fault-injection.svg" alt="Aurat deterministic provider fault injection" width="100%" />
+</p>
 
 ```bash
 node src/cli.js proxy --mode replay --fault rate-limit

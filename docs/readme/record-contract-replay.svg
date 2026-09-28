@@ -1,0 +1,26 @@
+<svg width="1200" height="540" viewBox="0 0 1200 540" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="1200" height="540" rx="28" fill="#0B1020"/>
+<text x="70" y="86" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="40" font-weight="700">Record → Contract → Replay</text>
+<text x="70" y="122" fill="#94A3B8" font-family="Arial,sans-serif" font-size="20">The core Aurat testing loop</text>
+<rect x="70" y="185" width="280" height="225" rx="24" fill="#111827" stroke="#334155"/>
+<text x="210" y="242" text-anchor="middle" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="28" font-weight="700">1. Record</text>
+<text x="210" y="289" text-anchor="middle" fill="#93C5FD" font-family="Arial,sans-serif" font-size="20">Capture known-good</text>
+<text x="210" y="320" text-anchor="middle" fill="#93C5FD" font-family="Arial,sans-serif" font-size="20">request / response pairs</text>
+<rect x="117" y="350" width="186" height="36" rx="10" fill="#172554"/>
+<text x="210" y="373" text-anchor="middle" fill="#DBEAFE" font-family="monospace" font-size="14">proxy --mode record</text>
+<rect x="460" y="185" width="280" height="225" rx="24" fill="#111827" stroke="#334155"/>
+<text x="600" y="242" text-anchor="middle" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="28" font-weight="700">2. Contract</text>
+<text x="600" y="289" text-anchor="middle" fill="#86EFAC" font-family="Arial,sans-serif" font-size="20">Snapshot stable behavior</text>
+<text x="600" y="320" text-anchor="middle" fill="#86EFAC" font-family="Arial,sans-serif" font-size="20">tools • JSON • finish mode</text>
+<rect x="520" y="350" width="160" height="36" rx="10" fill="#052E16"/>
+<text x="600" y="373" text-anchor="middle" fill="#DCFCE7" font-family="monospace" font-size="15">aurat contract</text>
+<rect x="850" y="185" width="280" height="225" rx="24" fill="#111827" stroke="#334155"/>
+<text x="990" y="242" text-anchor="middle" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="28" font-weight="700">3. Replay</text>
+<text x="990" y="289" text-anchor="middle" fill="#FDE68A" font-family="Arial,sans-serif" font-size="20">Run deterministic CI</text>
+<text x="990" y="320" text-anchor="middle" fill="#FDE68A" font-family="Arial,sans-serif" font-size="20">without provider calls</text>
+<rect x="910" y="350" width="160" height="36" rx="10" fill="#422006"/>
+<text x="990" y="373" text-anchor="middle" fill="#FEF3C7" font-family="monospace" font-size="15">aurat verify</text>
+<path d="M350 297H430" stroke="#475569" stroke-width="5" stroke-linecap="round"/><polygon points="430,297 415,288 415,306" fill="#475569"/>
+<path d="M740 297H820" stroke="#475569" stroke-width="5" stroke-linecap="round"/><polygon points="820,297 805,288 805,306" fill="#475569"/>
+<text x="600" y="480" text-anchor="middle" fill="#64748B" font-family="Arial,sans-serif" font-size="18">Hundreds of deterministic tests on every commit. A few live canaries when reality matters.</text>
+</svg>

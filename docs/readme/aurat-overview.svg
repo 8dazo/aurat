@@ -1,0 +1,33 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="1200" height="630" rx="28" fill="#0B1020"/>
+<rect x="40" y="40" width="1120" height="550" rx="24" fill="#11172A" stroke="#24304A"/>
+<text x="80" y="105" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="42" font-weight="700">Aurat.ai</text>
+<text x="80" y="142" fill="#94A3B8" font-family="Arial,sans-serif" font-size="22">Deterministic CI for AI applications</text>
+<rect x="80" y="220" width="205" height="110" rx="18" fill="#182238" stroke="#334155"/>
+<text x="182" y="266" text-anchor="middle" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="24" font-weight="700">App / Agent</text>
+<text x="182" y="299" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="17">OpenAI-compatible client</text>
+<rect x="365" y="190" width="280" height="170" rx="22" fill="#0F1E36" stroke="#3B82F6" stroke-width="2"/>
+<text x="505" y="242" text-anchor="middle" fill="#DBEAFE" font-family="Arial,sans-serif" font-size="30" font-weight="700">Aurat Runtime</text>
+<text x="505" y="282" text-anchor="middle" fill="#93C5FD" font-family="Arial,sans-serif" font-size="19">live • record • replay</text>
+<text x="505" y="314" text-anchor="middle" fill="#93C5FD" font-family="Arial,sans-serif" font-size="19">match • contracts • faults</text>
+<rect x="730" y="220" width="190" height="110" rx="18" fill="#182238" stroke="#334155"/>
+<text x="825" y="266" text-anchor="middle" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="24" font-weight="700">Provider</text>
+<text x="825" y="299" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="17">OpenAI-compatible</text>
+<rect x="985" y="220" width="135" height="110" rx="18" fill="#182238" stroke="#334155"/>
+<text x="1052" y="266" text-anchor="middle" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="24" font-weight="700">CI</text>
+<text x="1052" y="299" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="17">PR gate</text>
+<path d="M285 275H345" stroke="#64748B" stroke-width="4" stroke-linecap="round"/>
+<path d="M645 275H710" stroke="#64748B" stroke-width="4" stroke-linecap="round"/>
+<path d="M920 275H965" stroke="#64748B" stroke-width="4" stroke-linecap="round"/>
+<polygon points="345,275 331,267 331,283" fill="#64748B"/><polygon points="710,275 696,267 696,283" fill="#64748B"/><polygon points="965,275 951,267 951,283" fill="#64748B"/>
+<rect x="110" y="425" width="260" height="105" rx="18" fill="#132033" stroke="#334155"/>
+<text x="240" y="469" text-anchor="middle" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="24" font-weight="700">Recordings</text>
+<text x="240" y="501" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="17">real request / response baselines</text>
+<rect x="470" y="425" width="260" height="105" rx="18" fill="#132033" stroke="#334155"/>
+<text x="600" y="469" text-anchor="middle" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="24" font-weight="700">Contracts</text>
+<text x="600" y="501" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="17">versioned behavior expectations</text>
+<rect x="830" y="425" width="260" height="105" rx="18" fill="#132033" stroke="#334155"/>
+<text x="960" y="469" text-anchor="middle" fill="#F8FAFC" font-family="Arial,sans-serif" font-size="24" font-weight="700">Canaries</text>
+<text x="960" y="501" text-anchor="middle" fill="#94A3B8" font-family="Arial,sans-serif" font-size="17">small real-model drift checks</text>
+<text x="80" y="570" fill="#64748B" font-family="Arial,sans-serif" font-size="18">Make AI behavior testable like normal software.</text>
+</svg>
