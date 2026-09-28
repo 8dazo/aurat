@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "lane": "offline-application",
+  "revision": "d1aefb6face6d1ca7b78d3c55ef75ba40e05c62c",
+  "createdAt": "2026-09-28T14:14:43.102Z",
+  "ok": true,
+  "scenarios": [
+    {
+      "id": "valid-narration",
+      "status": "PASS",
+      "durationMs": 163,
+      "failures": [],
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "outputOverflow": false,
+        "stdout": "",
+        "stderr": ""
+      },
+      "coverage": {
+        "model": {
+          "total": 1,
+          "consumed": 1,
+          "pending": []
+        },
+        "tools": {
+          "total": 0,
+          "consumed": 0
+        },
+        "httpGuard": true,
+        "osSandbox": false
+      },
+      "events": [
+        {
+          "type": "output",
+          "value": {
+            "rejected": false,
+            "result": {
+              "summary": "Aave has an analytics gap",
+              "why": [
+                "Growing usage",
+                "Clear evidence",
+                "Developer demand"
+              ],
+              "action": "Build an analytics dashboard",
+              "source": "openrouter"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "reject-numeric-summary",
+      "status": "PASS",
+      "durationMs": 146,
+      "failures": [],
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "outputOverflow": false,
+        "stdout": "",
+        "stderr": ""
+      },
+      "coverage": {
+        "model": {
+          "total": 1,
+          "consumed": 1,
+          "pending": []
+        },
+        "tools": {
+          "total": 0,
+          "consumed": 0
+        },
+        "httpGuard": true,
+        "osSandbox": false
+      },
+      "events": [
+        {
+          "type": "output",
+          "value": {
+            "rejected": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "reject-object-action",
+      "status": "PASS",
+      "durationMs": 182,
+      "failures": [],
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "outputOverflow": false,
+        "stdout": "",
+        "stderr": ""
+      },
+      "coverage": {
+        "model": {
+          "total": 1,
+          "consumed": 1,
+          "pending": []
+        },
+        "tools": {
+          "total": 0,
+          "consumed": 0
+        },
+        "httpGuard": true,
+        "osSandbox": false
+      },
+      "events": [
+        {
+          "type": "output",
+          "value": {
+            "rejected": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "reject-nonstring-reasons",
+      "status": "PASS",
+      "durationMs": 161,
+      "failures": [],
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "outputOverflow": false,
+        "stdout": "",
+        "stderr": ""
+      },
+      "coverage": {
+        "model": {
+          "total": 1,
+          "consumed": 1,
+          "pending": []
+        },
+        "tools": {
+          "total": 0,
+          "consumed": 0
+        },
+        "httpGuard": true,
+        "osSandbox": false
+      },
+      "events": [
+        {
+          "type": "output",
+          "value": {
+            "rejected": true
+          }
+        }
+      ]
+    }
+  ]
+}

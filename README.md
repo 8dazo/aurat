@@ -219,3 +219,9 @@ We are prioritizing real workflows that are costly to get wrong: duplicate write
 Built with [Ajv](https://github.com/ajv-validator/ajv) and [MSW interceptors](https://github.com/mswjs/interceptors). Read the [implementation and reuse notes](docs/implementation-review.md). Brand assets live in the [brand directory](docs/brand).
 
 **Distribution:** the npm package is marked private and this repository does not currently declare a project-wide license. Dependency licenses remain their own; public package distribution and licensing are separate release decisions.
+
+## Platform and second-application proof
+
+The [Aurat platform](apps/platform/README.md) adds a landing page and a private report workspace with projects, run evidence, fixture coverage, and passing baselines. It imports reports from your CLI or CI artifacts; automatic GitHub synchronization is not yet implemented.
+
+The [Scout milestone](docs/milestones/scout/README.md) catches three malformed-output acceptance defects in Scout's actual narration module. Original code passes 1/4 scenarios; the validation fix passes 4/4 with unchanged fixtures, and the suite passes in Scout CI.
