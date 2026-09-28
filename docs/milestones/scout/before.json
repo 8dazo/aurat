@@ -1,0 +1,207 @@
+{
+  "version": 1,
+  "lane": "offline-application",
+  "revision": "d1aefb6face6d1ca7b78d3c55ef75ba40e05c62c",
+  "createdAt": "2026-09-28T14:14:20.189Z",
+  "ok": false,
+  "scenarios": [
+    {
+      "id": "valid-narration",
+      "status": "PASS",
+      "durationMs": 235,
+      "failures": [],
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "outputOverflow": false,
+        "stdout": "",
+        "stderr": ""
+      },
+      "coverage": {
+        "model": {
+          "total": 1,
+          "consumed": 1,
+          "pending": []
+        },
+        "tools": {
+          "total": 0,
+          "consumed": 0
+        },
+        "httpGuard": true,
+        "osSandbox": false
+      },
+      "events": [
+        {
+          "type": "output",
+          "value": {
+            "rejected": false,
+            "result": {
+              "summary": "Aave has an analytics gap",
+              "why": [
+                "Growing usage",
+                "Clear evidence",
+                "Developer demand"
+              ],
+              "action": "Build an analytics dashboard",
+              "source": "openrouter"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "reject-numeric-summary",
+      "status": "FAIL",
+      "durationMs": 174,
+      "failures": [
+        {
+          "field": "output",
+          "message": "Output differs from expected value"
+        }
+      ],
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "outputOverflow": false,
+        "stdout": "",
+        "stderr": ""
+      },
+      "coverage": {
+        "model": {
+          "total": 1,
+          "consumed": 1,
+          "pending": []
+        },
+        "tools": {
+          "total": 0,
+          "consumed": 0
+        },
+        "httpGuard": true,
+        "osSandbox": false
+      },
+      "events": [
+        {
+          "type": "output",
+          "value": {
+            "rejected": false,
+            "result": {
+              "summary": 42,
+              "why": [
+                "Growing usage",
+                "Clear evidence",
+                "Developer demand"
+              ],
+              "action": "Build an analytics dashboard",
+              "source": "openrouter"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "reject-object-action",
+      "status": "FAIL",
+      "durationMs": 182,
+      "failures": [
+        {
+          "field": "output",
+          "message": "Output differs from expected value"
+        }
+      ],
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "outputOverflow": false,
+        "stdout": "",
+        "stderr": ""
+      },
+      "coverage": {
+        "model": {
+          "total": 1,
+          "consumed": 1,
+          "pending": []
+        },
+        "tools": {
+          "total": 0,
+          "consumed": 0
+        },
+        "httpGuard": true,
+        "osSandbox": false
+      },
+      "events": [
+        {
+          "type": "output",
+          "value": {
+            "rejected": false,
+            "result": {
+              "summary": "Aave has an analytics gap",
+              "why": [
+                "Growing usage",
+                "Clear evidence",
+                "Developer demand"
+              ],
+              "action": {
+                "execute": "transfer"
+              },
+              "source": "openrouter"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "reject-nonstring-reasons",
+      "status": "FAIL",
+      "durationMs": 155,
+      "failures": [
+        {
+          "field": "output",
+          "message": "Output differs from expected value"
+        }
+      ],
+      "process": {
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "outputOverflow": false,
+        "stdout": "",
+        "stderr": ""
+      },
+      "coverage": {
+        "model": {
+          "total": 1,
+          "consumed": 1,
+          "pending": []
+        },
+        "tools": {
+          "total": 0,
+          "consumed": 0
+        },
+        "httpGuard": true,
+        "osSandbox": false
+      },
+      "events": [
+        {
+          "type": "output",
+          "value": {
+            "rejected": false,
+            "result": {
+              "summary": "Aave has an analytics gap",
+              "why": [
+                42,
+                {
+                  "text": "invented"
+                }
+              ],
+              "action": "Build an analytics dashboard",
+              "source": "openrouter"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
