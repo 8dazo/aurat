@@ -1,0 +1,26 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "aurat": {
+      "root": "services/vercel-gateway",
+      "framework": "node",
+      "runtime": "node",
+      "entrypoint": "index.mjs",
+      "installCommand": "npm ci",
+      "devCommand": "node server.mjs",
+      "bindings": [
+        { "type": "service", "service": "platform", "format": "url", "env": "PLATFORM_URL" }
+      ]
+    },
+    "platform": {
+      "root": "apps/vercel-platform",
+      "framework": "nextjs",
+      "installCommand": "npx --yes pnpm@11.25.0 install --frozen-lockfile",
+      "buildCommand": "npm run build",
+      "devCommand": "npm run dev -- --hostname 127.0.0.1 --port $PORT"
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": { "service": "aurat" } }
+  ]
+}

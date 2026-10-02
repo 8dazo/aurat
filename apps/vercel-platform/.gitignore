@@ -1,0 +1,18 @@
+node_modules/
+.next/
+out/
+.vercel/
+.env*
+*.tsbuildinfo
+next-env.d.ts
+# Generated from the platform's public source; no APIs or identity helpers.
+app/
+components/
+hooks/
+lib/
+public/
+postcss.config.mjs
+tsconfig.json
+# Next development tool metadata is not deployment source.
+AGENTS.md
+CLAUDE.md

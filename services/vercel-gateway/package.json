@@ -1,0 +1,7 @@
+{
+  "name": "aurat-vercel-gateway",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": { "dev": "node server.mjs", "test": "node --test *.test.mjs" }
+}
