@@ -9,7 +9,12 @@
       "installCommand": "npm ci",
       "devCommand": "node server.mjs",
       "bindings": [
-        { "type": "service", "service": "platform", "format": "url", "env": "PLATFORM_URL" }
+        {
+          "type": "service",
+          "service": "platform",
+          "format": "url",
+          "env": "PLATFORM_URL"
+        }
       ]
     },
     "platform": {
@@ -21,6 +26,14 @@
     }
   },
   "rewrites": [
-    { "source": "/(.*)", "destination": { "service": "aurat" } }
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "aurat"
+      }
+    }
+  ],
+  "alias": [
+    "aurat.ai"
   ]
 }

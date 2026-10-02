@@ -79,3 +79,10 @@ References:
 
 The current `services` model preserves request paths; the older
 `experimentalServices` model and its route-prefix stripping rules do not apply.
+
+## Production domain
+
+The repository requests `aurat.ai` as its production alias. Assignment requires
+Vercel domain ownership verification and DNS pointing to the deployment. The
+configuration does not change registrar DNS records. Confirm the domain is
+assigned and its HTTPS certificate is ready before treating it as live.
