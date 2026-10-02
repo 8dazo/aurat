@@ -16,9 +16,9 @@ jobs:
         with:
           node-version: 24
       - run: npm ci --ignore-scripts
-      # Pin this to the reviewed Aurat commit/release before using secrets.
+      # Keep the replay action and trusted delivery checkout on the same reviewed commit.
       - name: Execute changed agent with recorded model and tool fixtures
-        uses: 8dazo/aurat@main
+        uses: 8dazo/aurat@84f375798fb1f76ef0dd6ccd79bbf775ef890e6a
         with:
           suite: tests/aurat/suite.json
           report: .aurat/report.json
@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: 8dazo/aurat
-          ref: main # replace with the same reviewed immutable commit
+          ref: 84f375798fb1f76ef0dd6ccd79bbf775ef890e6a
           path: aurat-runner
           persist-credentials: false
       - uses: actions/setup-node@v4
