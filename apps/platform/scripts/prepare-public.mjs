@@ -3,16 +3,9 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
-export const defaultWorkspaceUrl='https://aurat-workspace.d3c1.chatgpt.site/app';
-
 // One explicit public-source allowlist for Render and Vercel. Trusted auth,
 // API routes, database bindings, and environment files never enter the export.
 export function preparePublic(target) {
-  const url=new URL(process.env.AURAT_PRIVATE_WORKSPACE_URL || defaultWorkspaceUrl);
-  if(url.protocol!=='https:'||url.username||url.password||url.search||url.hash) {
-    throw new Error('AURAT_PRIVATE_WORKSPACE_URL must be a credential-free HTTPS URL without query or fragment.');
-  }
-  const workspace=url.href;
   for(const dir of ['app','components','hooks','lib','public']) {
     rmSync(path.join(target,dir),{recursive:true,force:true});
   }
@@ -30,14 +23,12 @@ export function preparePublic(target) {
   // A public copy must not suggest that ChatGPT's trusted-header auth works here.
   const dashboard=path.join(target,'components/dashboard.tsx');
   let source=readFileSync(dashboard,'utf8');
-  source=source.replace('/signin-with-chatgpt?return_to=%2Fapp',workspace)
-    .replace('Sign in to connect','Open private workspace')
-    .replace('Real Scout reproduction. Changes here are read-only.','Public demo · read-only. Saved projects remain in the private workspace.');
+  source=source.replace('/signin-with-chatgpt?return_to=%2Fapp','/app?demo=1')
+    .replace('Sign in to connect','Explore workspace')
+    .replace('Real Scout reproduction. Changes here are read-only.','Public demo · read-only. Authentication and saved projects are not enabled on this deployment.')
+    .replace('Sign in to save projects and reports.','This deployment is a read-only demo. Saving projects and reports is not enabled.')
+    .replace('Example workspace · sign in to save your own data','Example workspace · read-only demo');
   writeFileSync(dashboard,source);
-  for(const relative of ['components/landing.tsx','app/docs/page.tsx']){
-    const file=path.join(target,relative);
-    writeFileSync(file,readFileSync(file,'utf8').replaceAll('href="/app"',`href={${JSON.stringify(workspace)}}`));
-  }
   const routes=['app','app/projects','app/runs','app/scenarios','app/fixtures','app/connections','app/settings','app/runs/scout-original','app/runs/scout-fixed'];
   for(const route of routes){
     mkdirSync(path.join(target,'app',route),{recursive:true});

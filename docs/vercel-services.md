@@ -1,7 +1,7 @@
 # Vercel Services deployment
 
 This configuration serves the public demo through a Node gateway and an internal
-Next.js frontend. Saved projects remain in the existing private workspace.
+Next.js frontend. All workspace links remain on the deployed domain. The dashboard is a read-only demo.
 
 The Render blueprint builds a **static export of the platform**. It does not
 define a second Node API backend. The repository's CLI and replay server remain
@@ -34,19 +34,13 @@ does not make server-to-server calls.
 
 - Landing page, docs, and read-only Scout example workspace.
 - Same-domain navigation to public demo routes.
-- Existing handoff for saved projects to
-  `https://aurat-workspace.d3c1.chatgpt.site/app`.
+- Workspace links stay on the deployed domain at `/app/`.
 
 This does **not** migrate Cloudflare D1 storage or trusted-header ChatGPT auth to
 Vercel. The public export excludes API routes, database code, identity helpers,
 environment files, and saved user data. The gateway only permits GET and HEAD,
 and does not forward credentials or trusted identity headers. This prevents
 the public export from impersonating a signed-in workspace.
-
-Optional build variable: `AURAT_PRIVATE_WORKSPACE_URL` changes the external
-private-workspace handoff. It must be an HTTPS URL without embedded credentials,
-query, or fragment. This is an external link, **not** a service binding. The
-current destination is retained from the Render export.
 
 ## Manual import
 
@@ -58,7 +52,7 @@ current destination is retained from the Render export.
 6. Confirm the runtime binding is generated; do not enter `PLATFORM_URL` yourself.
 7. Validate `/`, `/docs/`, `/app/?demo=1`, and
    `/app/runs/scout-fixed/?demo=1`, including images and Next assets.
-8. Verify “Open private workspace” goes to the intended existing workspace.
+8. Verify “Open workspace” stays on the deployed domain and opens `/app/`.
 
 Run all services locally from the repository root:
 
