@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual, randomUUID } from "node:crypto";
 import { InputError, text } from "./service.js";
 import { handleMcp, versions } from "./mcp.js";
 import { parseReport } from "./report.js";
+import { issueCiToken, authenticateCi, receiveCiReport } from "./ci.js";
 
 const equal = (a, b) => {
   const x = Buffer.from(a ?? ""),
@@ -57,9 +58,22 @@ export function handler(service, { token, allowedOrigins = [] }) {
       if (req.method === "GET" && path === "/health")
         return reply({
           ok: true,
-          storage: "sqlite",
+          storage: service.store.kind ?? "sqlite",
           scope: "single-workspace-development",
         });
+      if (path === "/api/ci/reports") {
+        if (req.method !== "POST")
+          throw new InputError("Method not allowed", 405);
+        const credential = await authenticateCi(
+          service,
+          req.headers.authorization,
+        );
+        if (!req.headers["content-type"]?.startsWith("application/json"))
+          throw new InputError("Expected application/json", 415);
+        const input = JSON.parse((await body(req)).toString());
+        const result = await receiveCiReport(service, credential, input);
+        return reply(result, result.duplicate ? 200 : 201);
+      }
       if (path.startsWith("/api/webhooks/github/")) {
         if (req.method !== "POST")
           throw new InputError("Method not allowed", 405);
@@ -132,6 +146,12 @@ export function handler(service, { token, allowedOrigins = [] }) {
           );
       }
       if (req.method === "GET") {
+        if (path === "/api/ci-tokens")
+          return reply(
+            (await service.store.list("ci-tokens")).map(
+              ({ tokenHash, ...metadata }) => metadata,
+            ),
+          );
         if (path === "/api/workspace") return reply(await service.workspace());
         const kind = {
           "/api/connections": "connections",
@@ -152,6 +172,16 @@ export function handler(service, { token, allowedOrigins = [] }) {
       if (path === "/mcp") {
         const result = await handleMcp(service, input);
         return reply(result, result === null ? 202 : 200);
+      }
+      if (path === "/api/ci-tokens")
+        return reply(await issueCiToken(service, input), 201);
+      const revoke = path.match(/^\/api\/ci-tokens\/([^/]+)\/revoke$/);
+      if (revoke) {
+        const value = await service.store.get("ci-tokens", revoke[1]);
+        if (!value) throw new InputError("CI token not found", 404);
+        value.revokedAt = new Date().toISOString();
+        await service.store.put("ci-tokens", value);
+        return reply({ ok: true });
       }
       if (path === "/api/workspace") {
         if (input.action === "project")

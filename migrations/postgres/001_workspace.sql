@@ -1,17 +1,19 @@
--- Contract for the future Neon adapter. This is a migration template, not an
--- enabled Postgres runtime. JSONB stores versioned domain objects; credentials
--- remain in server environment variables and never enter these records.
-BEGIN;
-CREATE TABLE IF NOT EXISTS records (
+-- Managed by Drizzle's migration runner. Application data lives in its own schema.
+CREATE SCHEMA IF NOT EXISTS aurat;
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS aurat.records (
   kind TEXT NOT NULL,
   id TEXT NOT NULL,
   data JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (kind, id)
 );
-CREATE INDEX IF NOT EXISTS records_kind_created ON records(kind, created_at DESC);
-CREATE TABLE IF NOT EXISTS deliveries (id TEXT PRIMARY KEY, received_at TIMESTAMPTZ NOT NULL);
-CREATE TABLE IF NOT EXISTS jobs (
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS records_kind_created ON aurat.records(kind, created_at DESC);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS aurat.deliveries (id TEXT PRIMARY KEY, received_at TIMESTAMPTZ NOT NULL);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS aurat.jobs (
   id TEXT PRIMARY KEY,
   data JSONB NOT NULL,
   state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','running','completed','failed')),
@@ -21,5 +23,5 @@ CREATE TABLE IF NOT EXISTS jobs (
   result JSONB,
   error TEXT
 );
-CREATE INDEX IF NOT EXISTS jobs_pending ON jobs(state, lease_until, created_at);
-COMMIT;
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS jobs_pending ON aurat.jobs(state, lease_until, created_at);

@@ -7,6 +7,11 @@ workflow status sync, OTLP ingestion, stored-trace contracts, signed webhook job
 and MCP tools. These are local development capabilities; the public Vercel site
 still awaits persistent hosted storage and account authentication.
 
+The Postgres adapter, tracked migrations and atomic SQLite handoff are implemented.
+CI now has scenario summaries, artifacts, scoped report tokens and duplicate-safe
+delivery. Connecting the user's Neon database, hosted API routing, account/team
+auth, a GitHub App and verified artifact ingestion are still outstanding.
+
 ## Phase 0 — validate the pain
 
 - interview AI engineering teams

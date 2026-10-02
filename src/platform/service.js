@@ -172,17 +172,15 @@ export class PlatformService {
     const data = JSON.parse(payload);
     if (!Array.isArray(data.workflow_runs))
       throw new InputError("Invalid GitHub workflow response", 502);
-    connection.workflowRuns = data.workflow_runs
-      .slice(0, 20)
-      .map((run) => ({
-        id: run.id,
-        name: run.name,
-        status: run.status,
-        conclusion: run.conclusion,
-        revision: run.head_sha,
-        url: run.html_url,
-        createdAt: run.created_at,
-      }));
+    connection.workflowRuns = data.workflow_runs.slice(0, 20).map((run) => ({
+      id: run.id,
+      name: run.name,
+      status: run.status,
+      conclusion: run.conclusion,
+      revision: run.head_sha,
+      url: run.html_url,
+      createdAt: run.created_at,
+    }));
     connection.lastSyncedAt = new Date().toISOString();
     return this.store.put("connections", connection);
   }
@@ -319,7 +317,12 @@ export class PlatformService {
           jobId: job.id,
         });
       }
-      await this.store.finish(job.id, { runId: run.id, ok: run.report.ok });
+      await this.store.finish(
+        job.id,
+        { runId: run.id, ok: run.report.ok },
+        null,
+        job.attempts,
+      );
     } catch (error) {
       await this.store.finish(
         job.id,
@@ -327,6 +330,7 @@ export class PlatformService {
         error instanceof InputError
           ? error.message
           : "Contract verification failed",
+        job.attempts,
       );
     }
     return job;

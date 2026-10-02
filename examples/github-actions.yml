@@ -1,19 +1,55 @@
 name: AI regression gate
-
 on:
   pull_request:
   push:
     branches: [main]
-
+permissions:
+  contents: read
 jobs:
   aurat:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      # During the alpha use @main. Pin a release/tag once V1 is cut.
-      - name: Verify AI behavioral contracts
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+      # Pin this to the reviewed Aurat commit/release before using secrets.
+      - name: Execute changed agent with recorded model and tool fixtures
         uses: 8dazo/aurat@main
         with:
-          recordings: .aurat/recordings.jsonl
-          contract: .aurat/contracts.json
+          suite: tests/aurat/suite.json
+          report: .aurat/report.json
+  # Public pull requests get the replay gate and artifact, without API credentials.
+  # Delivery runs in a separate job only on the trusted default branch.
+  deliver:
+    needs: aurat
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: 8dazo/aurat
+          ref: main # replace with the same reviewed immutable commit
+          path: aurat-runner
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts --prefix aurat-runner
+      - uses: actions/download-artifact@v4
+        with:
+          name: aurat-report-aurat-0
+          path: report
+      - name: Deliver report to private workspace
+        env:
+          AURAT_API_URL: ${{ vars.AURAT_API_URL }}
+          AURAT_PROJECT_ID: ${{ vars.AURAT_PROJECT_ID }}
+          AURAT_REPORT_TOKEN: ${{ secrets.AURAT_REPORT_TOKEN }}
+          AURAT_REPORT: report/report.json
+          AURAT_REPORT_KEY: agent-regression
+          AURAT_REPORT_JOB: aurat
+          AURAT_REPORT_LABEL: Default-branch agent replay
+        run: node aurat-runner/src/ci/upload.js

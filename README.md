@@ -24,7 +24,7 @@
 
 ## Private workspace and integrations
 
-The local control plane now supports persistent projects and reports, GitHub repository verification and workflow sync, OTLP JSON ingestion, behavioral contracts, signed webhook jobs, and MCP tools. Use Node 24, run `npm run platform:init` and `npm run platform:dev`, then follow the [workspace setup and Neon delivery plan](docs/platform-backend.md). These capabilities are local; the public site remains a demo until hosted storage and account authentication are connected.
+The private control plane supports SQLite or Postgres, saved projects/reports, GitHub workflow sync, OTLP ingestion, contracts, signed webhook jobs, scoped CI upload tokens and MCP tools. Use Node 24, run `npm run platform:init` and `npm run platform:dev`, then follow the [workspace setup](docs/platform-backend.md), [Postgres/Neon handoff](docs/postgres-setup.md), and [CI delivery guide](docs/ci-report-delivery.md). The public site remains a demo until hosted API routing and account authentication are connected.
 
 ## Why Aurat
 
@@ -226,6 +226,6 @@ Built with [Ajv](https://github.com/ajv-validator/ajv) and [MSW interceptors](ht
 
 ## Platform and second-application proof
 
-The [Aurat platform](apps/platform/README.md) adds a landing page and a private report workspace with projects, run evidence, fixture coverage, and passing baselines. It imports reports from your CLI or CI artifacts; automatic GitHub synchronization is not yet implemented.
+The [Aurat platform](apps/platform/README.md) adds a landing page and a private report workspace with projects, run evidence, fixture coverage, and passing baselines. The local API verifies GitHub repositories, syncs workflow status and receives scoped CI report uploads. GitHub App installation and automatic artifact ingestion remain planned.
 
 The [Scout milestone](docs/milestones/scout/README.md) catches three malformed-output acceptance defects in Scout's actual narration module. Original code passes 1/4 scenarios; the validation fix passes 4/4 with unchanged fixtures, and the suite passes in Scout CI.

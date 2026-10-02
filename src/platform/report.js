@@ -45,6 +45,10 @@ const schema = {
               stdout: { type: "string", maxLength: 20000 },
               stderr: { type: "string", maxLength: 20000 },
               exitCode: { type: ["integer", "null"] },
+              signal: { type: ["string", "null"], maxLength: 40 },
+              timedOut: { type: "boolean" },
+              outputOverflow: { type: "boolean" },
+              spawnError: { type: "string", maxLength: 20000 },
             },
           },
           coverage: {

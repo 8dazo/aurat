@@ -9,15 +9,15 @@ not turn the exported Vercel site into a hosted multi-user backend.
 
 | Area | Implemented behavior | Boundary |
 | --- | --- | --- |
-| Database | Persistent SQLite, versioned records, delivery deduplication, durable leased jobs | Local development; not Vercel storage |
+| Database | Persistent SQLite or Postgres/Neon adapter, tracked migrations, atomic SQLite import, leased jobs | Hosted API and team authorization still pending |
 | Projects | Create projects, import validated application reports, select passing baselines | One workspace per server token |
-| GitHub | Verify repository through GitHub REST; sync last 20 workflow statuses | No artifact download, checkout, GitHub App installation or PR gate yet |
+| GitHub | Repository verification, workflow sync, action replay gate, job summary/artifact, scoped CI report submission | No GitHub App, automatic artifact ingestion or branch-protection configuration |
 | OpenTelemetry | Import OTLP JSON model spans, redact supported secrets, retain normalized recordings | JSON only; supported GenAI chat-completion spans need captured input/output messages |
 | Contracts | Infer behavioral contracts and verify new stored evidence with the existing engine | Verifies stored traces, not the changed repository application |
 | Triggers | Manual jobs and HMAC-signed GitHub push/PR deliveries | Execute stored-trace verification only |
 | Worker | Persistent queue, lease recovery, terminal error state, deterministic run ID per job | Embedded worker in a long-lived local Node process; no hosted scheduler |
 | MCP | Authenticated JSON Streamable HTTP and local stdio adapter; five real tools | No OAuth, remote MCP-client connector or SSE stream |
-| Dashboard | Connect private API, save projects/reports, configure connectors, import spans, create contracts/triggers, inspect job states | API token stays in browser memory; local HTTP dashboard only |
+| Dashboard | Connect private API, save projects/reports, configure connectors/contracts/triggers, inspect jobs, issue/revoke CI tokens | API tokens stay in browser memory; local HTTP dashboard only |
 
 ## Run it
 
@@ -62,6 +62,8 @@ Environment configuration (put optional values in the ignored root `.env`):
 | `AURAT_GITHUB_TOKEN` | Optional server-only token for private repos/rate limits; repository metadata and Actions read permissions |
 | `AURAT_GITHUB_WEBHOOK_SECRET` | Required to create signed GitHub webhook triggers |
 | `AURAT_API_URL` | API URL for the stdio MCP adapter; defaults to loopback port 4318 |
+| `DATABASE_URL` | Optional Postgres runtime URL; selects the Postgres adapter when set |
+| `DATABASE_URL_UNPOOLED` | Direct connection for explicit migrations and SQLite import |
 
 Credentials are never stored in connection records. Secret redaction is a baseline,
 not complete personal-data detection. Review captured messages before importing.
@@ -85,6 +87,9 @@ Unknown origins are rejected even with a valid bearer token.
 | `/api/triggers` | GET / POST | List or create `{projectId,contractId,type:"manual"\|"github-webhook"}` |
 | `/api/triggers/:id/fire` | POST | `{}`; enqueue a verification job |
 | `/api/jobs` | GET | Worker state, result run ID, pass/fail and errors |
+| `/api/ci-tokens` | GET / POST | Token metadata or create a project-scoped report upload token |
+| `/api/ci-tokens/:id/revoke` | POST | Revoke a CI credential |
+| `/api/ci/reports` | POST | Scoped CI token required; ingest and deduplicate real application reports |
 | `/api/webhooks/github/:id` | POST | GitHub signed JSON; uses HMAC instead of workspace bearer authentication |
 | `/mcp` | POST | MCP JSON-RPC; bearer auth, both JSON/SSE Accept types |
 
@@ -130,21 +135,18 @@ invalid arguments return errors. HTTP clients use `/mcp` with
 
 ## Neon handoff
 
-`migrations/postgres/001_workspace.sql` is the Postgres migration template for
-the repository interface in `src/platform/storage.js`. It is **not an enabled
-Postgres adapter**. When a Neon connection is supplied:
+The Postgres adapter and versioned migration are now implemented. Follow
+[Postgres setup and SQLite import](postgres-setup.md) when a Neon connection is
+supplied. No cloud database has been provisioned. The remaining hosted steps are:
 
-1. Implement the same repository methods with parameterized Postgres queries.
-2. Apply the migration and export/import the local records, jobs and delivery IDs
-   with counts and IDs checked. Do not reset the database during deployment.
-3. Claim jobs transactionally using `FOR UPDATE SKIP LOCKED`; preserve leases and
-   job-based run IDs, and add a hosted worker/scheduler.
-4. Add users, team memberships, per-project authorization, credential encryption
+1. Apply migrations and optionally import SQLite on an isolated development branch.
+2. Add a hosted worker/scheduler; the Postgres queue already supports concurrent claims.
+3. Add users, team memberships, per-project authorization, credential encryption
    and scoped API keys before exposing workspace writes publicly.
-5. Route `/api/*` and `/mcp` to the backend through Vercel Services, retaining the
+4. Route `/api/*` and `/mcp` to the backend through Vercel Services, retaining the
    frontend's internal binding and moving data access into runtime functions.
-6. Verify saved projects, report imports, webhooks and MCP access on the public
-   domain. Local SQLite startup explicitly refuses Vercel.
+5. Verify saved projects, report imports, webhooks and MCP access on the public
+   domain. Vercel storage must be Postgres; SQLite cannot be selected there.
 
 A connection string alone does not enable team authentication or a durable worker.
 
@@ -152,8 +154,8 @@ A connection string alone does not enable team authentication or a durable worke
 
 | Priority | Work | Completion evidence |
 | --- | --- | --- |
-| 1 | Neon adapter, schema ownership, account/team auth and scoped credentials | Two users cannot read each other's projects; saves survive redeploy |
-| 2 | GitHub App, CI report upload/artifact ingestion and actual application replay gates | A changed agent PR runs its code against fixtures and receives a failing check |
+| 1 | Connect Neon, account/team auth and hosted API/worker | Two users cannot read each other's projects; saves survive redeploy |
+| 2 | GitHub App and automatic artifact ingestion | Local/action replay gate and scoped CI upload are implemented; authenticated artifact provenance remains |
 | 3 | Langfuse, LangSmith and Braintrust trace connectors | Authenticated trace pagination, provenance, duplicate-safe imports and normalized fixture tests |
 | 4 | Outbound MCP client and tool-call capture/replay | Real MCP tool exchange recorded, then replayed offline with argument/order checks |
 | 5 | Hosted schedules and bounded live canaries | Real provider checks with explicit call/cost limits and drift evidence |
@@ -167,6 +169,11 @@ malformed/oversized input, raw-body HMAC verification, deduplication, restart
 recovery, redaction, report import and a spawned stdio MCP client. GitHub unit
 tests use a controlled upstream; a separate smoke check verified the public Aurat
 repository and fetched real workflow statuses without a token.
+
+See [CI report delivery](ci-report-delivery.md) for actual application reports,
+scoped credentials, retries and separate trusted delivery jobs. Postgres SQL and
+SQLite handoff tests run locally with embedded Postgres and natively in the
+dedicated GitHub workflow.
 
 Protocol references:
 - [GitHub repository API](https://docs.github.com/en/rest/repos/repos#get-a-repository)

@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 // A Postgres implementation can replace it without changing connectors or tools.
 export class WorkspaceStore {
   constructor(filename) {
+    this.kind = "sqlite";
     if (filename !== ":memory:")
       mkdirSync(dirname(filename), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(filename);
@@ -72,6 +73,41 @@ export class WorkspaceStore {
       throw error;
     }
   }
+  async putIfAbsent(kind, value) {
+    const result = this.db
+      .prepare("INSERT OR IGNORE INTO records VALUES (?,?,?,?)")
+      .run(kind, value.id, JSON.stringify(value), value.createdAt);
+    return {
+      created: !!result.changes,
+      value: result.changes ? value : await this.get(kind, value.id),
+    };
+  }
+  async exportSnapshot() {
+    this.db.exec("BEGIN");
+    try {
+      const snapshot = {
+        version: 1,
+        records: this.db
+          .prepare("SELECT * FROM records")
+          .all()
+          .map((r) => ({ ...r, data: JSON.parse(r.data) })),
+        deliveries: this.db.prepare("SELECT * FROM deliveries").all(),
+        jobs: this.db
+          .prepare("SELECT * FROM jobs")
+          .all()
+          .map((r) => ({
+            ...r,
+            data: JSON.parse(r.data),
+            result: r.result ? JSON.parse(r.result) : null,
+          })),
+      };
+      this.db.exec("COMMIT");
+      return snapshot;
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
+    }
+  }
   async claim(now = Date.now()) {
     this.db.exec("BEGIN IMMEDIATE");
     try {
@@ -102,16 +138,18 @@ export class WorkspaceStore {
       throw error;
     }
   }
-  async finish(id, result, error) {
+  async finish(id, result, error, attempt) {
     this.db
       .prepare(
-        "UPDATE jobs SET state=?,result=?,error=?,lease_until=0 WHERE id=?",
+        "UPDATE jobs SET state=?,result=?,error=?,lease_until=0 WHERE id=? AND state='running' AND (? IS NULL OR attempts=?)",
       )
       .run(
         error ? "failed" : "completed",
         result ? JSON.stringify(result) : null,
         error ?? null,
         id,
+        attempt ?? null,
+        attempt ?? null,
       );
   }
   async jobs() {

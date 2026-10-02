@@ -7,20 +7,25 @@
     "aurat": "./src/cli.js"
   },
   "scripts": {
-    "test": "node --test src/*.test.js src/platform/*.test.js",
+    "test": "node --test src/*.test.js src/platform/*.test.js src/ci/*.test.js",
     "start": "node src/cli.js proxy",
     "demo": "node src/cli.js test --suite examples/ticket-agent/suite.json",
     "platform:init": "node src/platform/init.js",
     "platform:dev": "node --env-file-if-exists=.env --env-file-if-exists=.aurat/platform.env src/platform/start.js",
     "platform:mcp": "node --env-file-if-exists=.env --env-file-if-exists=.aurat/platform.env src/platform/stdio.js",
-    "platform:test": "node --test src/platform/*.test.js"
+    "platform:test": "node --test src/platform/*.test.js",
+    "platform:migrate": "node --env-file-if-exists=.env src/platform/migrate.js",
+    "platform:import-sqlite": "node --env-file-if-exists=.env src/platform/migrate.js --import-sqlite",
+    "ci:upload": "node src/ci/upload.js"
   },
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
     "@mswjs/interceptors": "0.45.5",
-    "ajv": "8.20.0"
+    "ajv": "8.20.0",
+    "drizzle-orm": "0.45.3",
+    "pg": "8.23.1"
   },
   "exports": {
     "./testing": {
@@ -31,10 +36,16 @@
   "files": [
     "src",
     "!src/*.test.js",
+    "!src/platform/*.test.js",
+    "!src/ci/*.test.js",
+    "migrations/postgres",
     "examples/ticket-agent",
     "docs/scenario-runner.md",
     "docs/implementation-review.md",
     "README.md",
     "docs/brand"
-  ]
+  ],
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8"
+  }
 }

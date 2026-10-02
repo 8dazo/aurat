@@ -1,15 +1,9 @@
 import { createServer } from "node:http";
-import { WorkspaceStore } from "./storage.js";
+import { openStore } from "./database.js";
 import { PlatformService } from "./service.js";
 import { handler } from "./http.js";
 
-if (process.env.VERCEL)
-  throw new Error(
-    "Local SQLite is not durable on Vercel. Configure a persistent Postgres adapter before hosting this service.",
-  );
-const store = new WorkspaceStore(
-  process.env.AURAT_DB_PATH ?? ".aurat/workspace.sqlite",
-);
+const store = await openStore();
 const service = new PlatformService(store);
 const server = createServer(
   handler(service, {
@@ -46,7 +40,7 @@ async function stop() {
   clearInterval(timer);
   server.close(async () => {
     while (running) await new Promise((resolve) => setTimeout(resolve, 20));
-    store.close();
+    await store.close();
   });
 }
 process.on("SIGTERM", stop);

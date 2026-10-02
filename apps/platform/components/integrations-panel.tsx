@@ -9,6 +9,7 @@ type Entry = {
   projectId: string;
   type?: string;
   name?: string;
+  revokedAt?: string | null;
   contractId?: string;
   state?: string;
   error?: string;
@@ -33,26 +34,38 @@ export default function IntegrationsPanel() {
   const [contracts, setContracts] = useState<Entry[]>([]);
   const [triggers, setTriggers] = useState<Entry[]>([]);
   const [jobs, setJobs] = useState<Entry[]>([]);
+  const [ciTokens, setCiTokens] = useState<Entry[]>([]);
+  const [issuedToken, setIssuedToken] = useState<{
+    id: string;
+    projectId: string;
+    token: string;
+  } | null>(null);
+  const [storage, setStorage] = useState("sqlite");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [file, setFile] = useState<File | null>(null);
   async function load() {
     if (!api) return;
-    const [w, c, b, t, j] = await Promise.all([
+    const [w, c, b, t, j, keys, health] = await Promise.all([
       api.request("/api/workspace"),
       api.request("/api/connections"),
       api.request("/api/contracts"),
       api.request("/api/triggers"),
       api.request("/api/jobs"),
+      api.request("/api/ci-tokens"),
+      api.request("/health"),
     ]);
     setProjects(w.projects);
     setConnections(c);
     setContracts(b);
     setTriggers(t);
     setJobs(j);
+    setCiTokens(keys);
+    setStorage(health.storage);
   }
   useEffect(() => {
+    setIssuedToken(null);
     if (!api) return;
     void load().catch((e) => setError(e.message));
     const timer = setInterval(
@@ -83,9 +96,9 @@ export default function IntegrationsPanel() {
     >
       <h2>Private API workspace</h2>
       <p>
-        Use the local persistent database now. Hosted accounts and Neon storage
-        are the next step. Workspace tokens stay in memory and are cleared on
-        reload.
+        Connect your private backend, using SQLite now or Postgres when
+        configured. Workspace tokens stay in memory and are cleared on reload.
+        Team accounts and hosted access are still being built.
       </p>
       {!api ? (
         <form
@@ -118,7 +131,9 @@ export default function IntegrationsPanel() {
       ) : (
         <>
           <div className="setting-row">
-            <span>Connected to {api.base}</span>
+            <span>
+              Connected to {api.base} · {storage}
+            </span>
             <Button variant="outline" onClick={disconnectApi}>
               Disconnect
             </Button>
@@ -347,6 +362,89 @@ export default function IntegrationsPanel() {
           ) : (
             <p>No jobs yet.</p>
           )}
+          <h3>GitHub CI report delivery</h3>
+          <p>
+            Create a project-scoped upload token. Add it as the GitHub secret
+            AURAT_REPORT_TOKEN; it can upload reports only for its project. The
+            API must be reachable from your runner. Local URLs need a
+            self-hosted runner.
+          </p>
+          <Button
+            disabled={busy || !project}
+            onClick={() =>
+              void act(async () => {
+                setIssuedToken(
+                  await api.request("/api/ci-tokens", {
+                    projectId: project,
+                    name: "GitHub Actions",
+                  }),
+                );
+              }, "CI upload token created; copy it now")
+            }
+          >
+            Create CI upload token
+          </Button>
+          {issuedToken && (
+            <div>
+              <Label htmlFor="issued-ci-token">
+                New token for project {issuedToken.projectId} · shown once
+              </Label>
+              <Input
+                id="issued-ci-token"
+                type="password"
+                readOnly
+                autoComplete="off"
+                value={issuedToken.token}
+              />
+              <Button
+                variant="outline"
+                onClick={() =>
+                  void act(async () => {
+                    await navigator.clipboard.writeText(issuedToken.token);
+                  }, "CI token copied")
+                }
+              >
+                Copy token
+              </Button>
+              <Button variant="ghost" onClick={() => setIssuedToken(null)}>
+                Dismiss token
+              </Button>
+            </div>
+          )}
+          <p>
+            Project ID: {project || "Choose a project"}.{" "}
+            <a
+              href="https://github.com/8dazo/aurat/blob/main/examples/github-actions.yml"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open CI workflow template
+            </a>
+          </p>
+          {ciTokens
+            .filter((key) => key.projectId === project)
+            .map((key) => (
+              <div className="setting-row" key={key.id}>
+                <span>
+                  {key.name} · {key.revokedAt ? "Revoked" : "reports:write"}
+                </span>
+                <Button
+                  variant="outline"
+                  disabled={busy || !!key.revokedAt}
+                  onClick={() =>
+                    void act(async () => {
+                      await api.request(
+                        "/api/ci-tokens/" + key.id + "/revoke",
+                        {},
+                      );
+                      if (issuedToken?.id === key.id) setIssuedToken(null);
+                    }, "CI token revoked")
+                  }
+                >
+                  Revoke
+                </Button>
+              </div>
+            ))}
           <h3>MCP</h3>
           <p>
             Authenticated Streamable HTTP: {api.base}/mcp. For a local client,

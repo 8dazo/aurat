@@ -11,16 +11,23 @@ inputs:
   report:
     description: JSON report path in the caller repository.
     default: .aurat/report.json
+  artifact-name:
+    description: Optional unique artifact name when using multiple suites in one job.
+outputs:
+  status:
+    description: Scenario runner exit code.
+    value: ${{ steps.replay.outputs.status }}
 runs:
   using: composite
   steps:
     - uses: actions/setup-node@v4
       with:
-        node-version: 22
+        node-version: 24
     - name: Install Aurat dependencies
       shell: bash
       run: npm ci --ignore-scripts --prefix "$GITHUB_ACTION_PATH"
     - name: Run application scenarios
+      id: replay
       shell: bash
       env:
         AURAT_SUITE: ${{ inputs.suite }}
@@ -30,7 +37,14 @@ runs:
         node "$GITHUB_ACTION_PATH/src/cli.js" test --suite "$AURAT_SUITE" --report "$AURAT_REPORT"
         status=$?
         set -e
-        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-          printf '### Aurat application regression\n\nExit code: %s. See step logs and the JSON report for scenario evidence.\n' "$status" >> "$GITHUB_STEP_SUMMARY"
-        fi
+        printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+        node "$GITHUB_ACTION_PATH/src/ci/summary.js" || true
         exit "$status"
+    - name: Preserve application report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name || format('aurat-report-{0}-{1}', github.job, strategy.job-index || '0') }}
+        path: ${{ inputs.report }}
+        include-hidden-files: true
+        if-no-files-found: warn

@@ -1,0 +1,36 @@
+name: Postgres workspace integration
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: aurat
+          POSTGRES_PASSWORD: local-ci-only
+          POSTGRES_DB: aurat_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Test native pg pool, migration and worker concurrency
+        env:
+          TEST_DATABASE_URL: postgres://aurat:local-ci-only@127.0.0.1:5432/aurat_test
+        run: node --test src/platform/postgres.test.js
