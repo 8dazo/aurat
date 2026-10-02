@@ -57,7 +57,16 @@ export async function connectApi(baseValue: string, token: string) {
       signal: AbortSignal.timeout(30000),
     });
     const data = await response.json();
-    if (!response.ok) throw Error(data.error ?? "API request failed");
+    if (!response.ok) {
+      const message =
+        typeof data === "object" &&
+        data !== null &&
+        "error" in data &&
+        typeof data.error === "string"
+          ? data.error
+          : "API request failed";
+      throw Error(message);
+    }
     return data;
   };
   await request("/api/workspace");
