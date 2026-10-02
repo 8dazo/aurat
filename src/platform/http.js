@@ -214,7 +214,7 @@ export function handler(service, { token, allowedOrigins = [] }) {
       if (path === "/api/connections")
         return reply(await service.connect(input), 201);
       const sync = path.match(/^\/api\/connections\/([^/]+)\/sync$/);
-      if (sync) return reply(await service.syncConnection(sync[1]));
+      if (sync) return reply(await service.syncConnection(sync[1], input));
       if (path === "/api/ingest/otel")
         return reply(await service.ingest(input), 201);
       const otlp = path.match(/^\/api\/ingest\/otel\/([^/]+)\/v1\/traces$/);

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
@@ -111,6 +112,58 @@ test("Postgres migration, SQLite handoff, CRUD, unique delivery, leased worker a
     );
     assert.equal(saved.filter((r) => !r.duplicate).length, 1);
     assert.equal((await store.list("runs")).length, 1);
+    const langfuseFixture = JSON.parse(
+      readFileSync(
+        new URL("../../examples/langfuse/observations.json", import.meta.url),
+      ),
+    );
+    const langfuse = new PlatformService(store, {
+      env: {
+        AURAT_LANGFUSE_PUBLIC_KEY: "test-public",
+        AURAT_LANGFUSE_SECRET_KEY: "test-secret",
+      },
+      fetchImpl: async (url) =>
+        Response.json(
+          new URL(url).pathname === "/api/public/projects"
+            ? {
+                data: [
+                  {
+                    id: langfuseFixture.data[0].projectId,
+                    name: "Postgres test",
+                  },
+                ],
+              }
+            : langfuseFixture,
+        ),
+    });
+    const connector = await langfuse.connect({
+      projectId: project.id,
+      type: "langfuse",
+    });
+    const imports = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        langfuse.syncConnection(connector.id, {
+          fromStartTime: "2025-01-01T00:00:00Z",
+          toStartTime: "2025-01-02T00:00:00Z",
+        }),
+      ),
+    );
+    assert.equal(
+      imports.reduce((n, page) => n + page.imported, 0),
+      1,
+    );
+    assert.equal((await store.list("batches")).length, 1);
+    assert.equal((await store.list("batches"))[0].source.provider, "langfuse");
+    const contract = await langfuse.createContract({ projectId: project.id });
+    assert.equal(
+      (
+        await langfuse.verify({
+          projectId: project.id,
+          contractId: contract.id,
+        })
+      ).report.ok,
+      true,
+    );
     const p = await service.project(project.id);
     p.name = "Updated";
     await store.put("projects", p);

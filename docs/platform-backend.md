@@ -13,6 +13,7 @@ not turn the exported Vercel site into a hosted multi-user backend.
 | Projects | Create projects, import validated application reports, select passing baselines | One workspace per server token |
 | GitHub | Repository verification, workflow sync, action replay gate, job summary/artifact, scoped CI report submission | No GitHub App, automatic artifact ingestion or branch-protection configuration |
 | OpenTelemetry | Import OTLP JSON model spans, redact supported secrets, retain normalized recordings | JSON only; supported GenAI chat-completion spans need captured input/output messages |
+| Langfuse | Verify Cloud project, cursor-paginated generation imports, source IDs, atomic deduplication, source-time ordering | Server-only credentials; captured non-streaming chat shapes only; no self-hosted origins |
 | Contracts | Infer behavioral contracts and verify new stored evidence with the existing engine | Verifies stored traces, not the changed repository application |
 | Triggers | Manual jobs and HMAC-signed GitHub push/PR deliveries | Execute stored-trace verification only |
 | Worker | Persistent queue, lease recovery, terminal error state, deterministic run ID per job | Embedded worker in a long-lived local Node process; no hosted scheduler |
@@ -61,6 +62,8 @@ Environment configuration (put optional values in the ignored root `.env`):
 | `AURAT_ALLOWED_ORIGINS` | Comma-separated exact UI origins; defaults to localhost/127.0.0.1 on port 3000 |
 | `AURAT_GITHUB_TOKEN` | Optional server-only token for private repos/rate limits; repository metadata and Actions read permissions |
 | `AURAT_GITHUB_WEBHOOK_SECRET` | Required to create signed GitHub webhook triggers |
+| `AURAT_LANGFUSE_BASE_URL` | Optional Langfuse Cloud regional origin; defaults to EU |
+| `AURAT_LANGFUSE_PUBLIC_KEY`, `AURAT_LANGFUSE_SECRET_KEY` | Optional server-only project credentials for Langfuse imports |
 | `AURAT_API_URL` | API URL for the stdio MCP adapter; defaults to loopback port 4318 |
 | `DATABASE_URL` | Optional Postgres runtime URL; selects the Postgres adapter when set |
 | `DATABASE_URL_UNPOOLED` | Direct connection for explicit migrations and SQLite import |
@@ -78,8 +81,8 @@ Unknown origins are rejected even with a valid bearer token.
 | --- | --- | --- |
 | `/api/workspace` | GET | Projects and latest saved reports |
 | `/api/workspace` | POST | `{action:"project",name,repository}`, `{action:"import",projectId,label,report}`, `{action:"baseline",runId}` |
-| `/api/connections` | GET / POST | List or create `{projectId,type:"github"\|"otlp"}` |
-| `/api/connections/:id/sync` | POST | `{}`; fetch real GitHub workflow status |
+| `/api/connections` | GET / POST | List or create `{projectId,type:"github"\|"otlp"\|"langfuse"}` |
+| `/api/connections/:id/sync` | POST | GitHub: `{}`; Langfuse: `{fromStartTime,toStartTime,cursor?}` imports one page |
 | `/api/ingest/otel` | POST | `{projectId,document}`; import counts and skip reasons |
 | `/api/ingest/otel/:projectId/v1/traces` | POST | Standard OTLP JSON document; OTLP partial-success response |
 | `/api/contracts` | GET / POST | List or create `{projectId,name?}` from imported evidence |
@@ -98,6 +101,12 @@ project-specific `.../v1/traces` endpoint. Protobuf exporters are not supported.
 Unsupported/missing-content spans are reported as rejected; they never become
 invented recordings. Direct JSON imports return counts so the caller can inspect
 what was retained.
+
+The [Langfuse connector](langfuse-connector.md) pulls captured generations into
+the same evidence store. It requires server-side credentials, reports skipped
+content, and keeps pagination and duplicate handling explicit. Provider live
+verification awaits the user's keys; fixture-based integration tests are not
+represented as a live-account check.
 
 GitHub webhook triggers accept `push`, and `pull_request` actions `opened`,
 `synchronize`, `reopened`. They validate the signed raw body, repository identity,
@@ -156,7 +165,7 @@ A connection string alone does not enable team authentication or a durable worke
 | --- | --- | --- |
 | 1 | Connect Neon, account/team auth and hosted API/worker | Two users cannot read each other's projects; saves survive redeploy |
 | 2 | GitHub App and automatic artifact ingestion | Local/action replay gate and scoped CI upload are implemented; authenticated artifact provenance remains |
-| 3 | Langfuse, LangSmith and Braintrust trace connectors | Authenticated trace pagination, provenance, duplicate-safe imports and normalized fixture tests |
+| 3 | Connect Langfuse credentials; build LangSmith and Braintrust connectors | Langfuse Cloud pagination, provenance, duplicate-safe imports and normalized fixture tests are implemented; live account check pending |
 | 4 | Outbound MCP client and tool-call capture/replay | Real MCP tool exchange recorded, then replayed offline with argument/order checks |
 | 5 | Hosted schedules and bounded live canaries | Real provider checks with explicit call/cost limits and drift evidence |
 | 6 | Alerts, retention, audit trail and production monitoring | Failed gates notify the selected destination; old evidence expires by policy |

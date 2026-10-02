@@ -2,18 +2,10 @@ import { randomUUID } from "node:crypto";
 import { convertOtlpDocument } from "../otel.js";
 import { buildContract, verifyContract } from "../contracts.js";
 import { redact } from "../redact.js";
+import { InputError, text } from "./input.js";
+import { verifyLangfuse, importLangfusePage } from "./langfuse.js";
 
-export class InputError extends Error {
-  constructor(message, status = 400) {
-    super(message);
-    this.status = status;
-  }
-}
-export function text(value, name, max = 150) {
-  if (typeof value !== "string" || !value.trim() || value.length > max)
-    throw new InputError(`Invalid ${name}`);
-  return value.trim();
-}
+export { InputError, text } from "./input.js";
 const record = (data) => ({
   ...data,
   id: randomUUID(),
@@ -54,8 +46,8 @@ export class PlatformService {
   }
   async connect(input) {
     const project = await this.project(input.projectId);
-    if (!["github", "otlp"].includes(input.type))
-      throw new InputError("Supported connectors: github, otlp");
+    if (!["github", "otlp", "langfuse"].includes(input.type))
+      throw new InputError("Supported connectors: github, otlp, langfuse");
     if (
       (await this.store.list("connections")).some(
         (c) => c.projectId === project.id && c.type === input.type,
@@ -63,6 +55,15 @@ export class PlatformService {
     )
       throw new InputError("Connector already exists", 409);
     let metadata = { format: "otlp-json", mode: "push" };
+    if (input.type === "langfuse") {
+      if (
+        Object.keys(input).some((key) => !["projectId", "type"].includes(key))
+      )
+        throw new InputError(
+          "Configure Langfuse credentials and region on the server, not in the request",
+        );
+      metadata = await verifyLangfuse(this);
+    }
     if (input.type === "github") {
       const [owner, repo] = project.repository
         .slice("https://github.com/".length)
@@ -101,15 +102,19 @@ export class PlatformService {
         private: !!data.private,
       };
     }
-    return this.store.put(
-      "connections",
-      record({
-        projectId: project.id,
-        type: input.type,
-        status: "connected",
-        metadata,
-      }),
-    );
+    const connection = record({
+      projectId: project.id,
+      type: input.type,
+      status: "connected",
+      metadata,
+    });
+    if (input.type === "langfuse") {
+      connection.id = `langfuse-${project.id}`;
+      const saved = await this.store.putIfAbsent("connections", connection);
+      if (!saved.created) throw new InputError("Connector already exists", 409);
+      return saved.value;
+    }
+    return this.store.put("connections", connection);
   }
   async ingest(input) {
     const project = await this.project(input.projectId);
@@ -137,12 +142,14 @@ export class PlatformService {
       skipped: result.skipped,
     };
   }
-  async syncConnection(id) {
+  async syncConnection(id, input = {}) {
     const connection = await this.store.get(
       "connections",
       text(id, "connectionId"),
     );
     if (!connection) throw new InputError("Connection not found", 404);
+    if (connection.type === "langfuse")
+      return importLangfusePage(this, connection, input);
     if (connection.type !== "github")
       throw new InputError(
         "OTLP connections receive push imports; no remote sync",

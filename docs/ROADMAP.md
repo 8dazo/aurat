@@ -9,7 +9,9 @@ still awaits persistent hosted storage and account authentication.
 
 The Postgres adapter, tracked migrations and atomic SQLite handoff are implemented.
 CI now has scenario summaries, artifacts, scoped report tokens and duplicate-safe
-delivery. Connecting the user's Neon database, hosted API routing, account/team
+delivery. Langfuse Cloud generation imports now have server-only credentials,
+cursor pagination, provenance and duplicate-safe persistence; a live-account
+check awaits credentials. Connecting the user's Neon database, hosted API routing, account/team
 auth, a GitHub App and verified artifact ingestion are still outstanding.
 
 ## Phase 0 — validate the pain
@@ -40,7 +42,7 @@ auth, a GitHub App and verified artifact ingestion are still outstanding.
 ## Phase 3 — existing-stack integrations
 
 - OpenTelemetry ingestion first-class
-- Langfuse connector
+- Langfuse Cloud connector implemented for captured non-streaming chat generations
 - LangSmith connector
 - Braintrust connector
 - provider-agnostic trace normalization

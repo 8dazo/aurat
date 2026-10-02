@@ -24,7 +24,7 @@
 
 ## Private workspace and integrations
 
-The private control plane supports SQLite or Postgres, saved projects/reports, GitHub workflow sync, OTLP ingestion, contracts, signed webhook jobs, scoped CI upload tokens and MCP tools. Use Node 24, run `npm run platform:init` and `npm run platform:dev`, then follow the [workspace setup](docs/platform-backend.md), [Postgres/Neon handoff](docs/postgres-setup.md), and [CI delivery guide](docs/ci-report-delivery.md). The public site remains a demo until hosted API routing and account authentication are connected.
+The private control plane supports SQLite or Postgres, saved projects/reports, GitHub workflow sync, OTLP ingestion, [Langfuse Cloud imports](docs/langfuse-connector.md), contracts, signed webhook jobs, scoped CI upload tokens and MCP tools. Use Node 24, run `npm run platform:init` and `npm run platform:dev`, then follow the [workspace setup](docs/platform-backend.md), [Postgres/Neon handoff](docs/postgres-setup.md), and [CI delivery guide](docs/ci-report-delivery.md). The public site remains a demo until hosted API routing and account authentication are connected.
 
 ## Why Aurat
 

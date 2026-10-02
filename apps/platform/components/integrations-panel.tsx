@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { connectApi, disconnectApi, useApiSession } from "./workspace-client";
-type Entry = {
+import LangfusePanel, { type LangfuseConnection } from "./langfuse-panel";
+type Entry = LangfuseConnection & {
   id: string;
   projectId: string;
   type?: string;
@@ -191,6 +192,17 @@ export default function IntegrationsPanel() {
               Enable OTLP ingestion
             </Button>
           </div>
+          {project ? (
+            <LangfusePanel
+              key={`${api.base}:${project}`}
+              api={api}
+              projectId={project}
+              connection={connections.find(
+                (c) => c.projectId === project && c.type === "langfuse",
+              )}
+              onChange={load}
+            />
+          ) : null}
           <Label htmlFor="otel-import">OTLP JSON spans</Label>
           <Input
             id="otel-import"

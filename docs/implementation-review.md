@@ -32,3 +32,29 @@ Reviewed the gstack source and applied its problem/scope, engineering, review an
 ## Known limits
 
 Node-only cooperative instrumentation; not a security sandbox. Single tool-owning process. Sequential tool capture. SSE timing is not reconstructed. OTel import does not capture missing tool/state boundaries. Redaction is a secrets baseline, not full PII protection. Linux Node 24 is the locally exercised environment. Initial CI passed Node 22/24 but exposed the interceptor dependency’s Node 22 minimum; the engine floor and runtime guard now explicitly reject Node 20. No latency/cost benchmark claims.
+
+## Langfuse connector review — October 2026
+
+The next integration slice reuses users' captured generations instead of requiring
+new instrumentation. It is deliberately a private-workspace import, not hosted
+multi-user access. The existing Next.js public export remains separate from
+server-side provider credentials and database code.
+
+- API review: checked Langfuse's current v2 observation API, selective I/O fields,
+  raw JSON strings and cursor pagination; no new dependency on deprecated trace reads.
+- Data review: strict captured-chat normalization, explicit unsupported-shape
+  reasons, redaction before encoding, project/time-window validation, immutable
+  source identity and atomic duplicate checks on both storage adapters.
+- QA: real private HTTP flow against a synthetic provider, contract creation,
+  changed-tool failure, concurrent imports, oversized/interrupted responses,
+  cross-project rejection, and safe retry after a partial database failure.
+- Retro: newest-first provider pagination must not make old rows the latest
+  behavioral evidence. Added an out-of-order import regression test and persisted
+  source timestamps. Connection creation also uses an atomic identity to prevent
+  double-click/concurrent verification from creating duplicate connectors.
+- Release limits: live-account verification requires user-supplied keys. No
+  claims of complete trace reconstruction, tool execution capture, streamed timing,
+  customer adoption or performance improvements are made.
+
+The gstack command runtime was unavailable for this slice; these are explicit
+engineering checks, not a claim that its slash-command automation ran.

@@ -1,0 +1,19 @@
+{
+  "data": [
+    {
+      "id": "observation-1",
+      "traceId": "trace-1",
+      "projectId": "langfuse-project-1",
+      "type": "GENERATION",
+      "name": "policy-assistant",
+      "level": "DEFAULT",
+      "startTime": "2025-01-01T12:00:00.000Z",
+      "endTime": "2025-01-01T12:00:01.000Z",
+      "model": "test-model",
+      "modelParameters": { "temperature": 0 },
+      "input": "[{\"role\":\"user\",\"content\":\"Find the returns policy\"}]",
+      "output": "{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call-1\",\"type\":\"function\",\"function\":{\"name\":\"search_docs\",\"arguments\":\"{\\\"query\\\":\\\"returns\\\"}\"}}]}"
+    }
+  ],
+  "meta": { "cursor": null }
+}

@@ -20,7 +20,7 @@ export const tools = [
   {
     name: "list_connections",
     description:
-      "List real GitHub and OTLP connections; credentials are never returned",
+      "List real GitHub, OTLP and Langfuse connections; credentials are never returned",
     inputSchema: {
       type: "object",
       properties: {},
@@ -37,7 +37,7 @@ export const tools = [
   {
     name: "create_contract",
     description:
-      "Infer a behavioral contract from already imported OTLP model spans",
+      "Infer a behavioral contract from already imported OTLP or Langfuse model generations",
     inputSchema: {
       ...projectSchema,
       properties: { ...projectSchema.properties, name: { type: "string" } },
