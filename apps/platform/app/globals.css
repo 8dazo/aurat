@@ -154,3 +154,5 @@ html[data-motion=paused] *,html[data-motion=paused] *:before,html[data-motion=pa
  .table-controls>.muted{font-size:.75rem}.project-card-bottom button,.project-card-bottom .muted{font-size:.875rem}.setup-panel{border-left:0;border-top-style:dashed}.connection-main,.connection-aside,.settings-panel{padding:22px}.skeleton-grid{grid-template-columns:repeat(2,1fr)}.skeleton-stat{height:130px}
 }
 @media(prefers-reduced-motion:reduce){.hero-art{transform:none!important}*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+.integration-panel{margin-bottom:24px}.integration-panel form{display:grid;gap:12px;max-width:520px}.integration-panel select{display:block;max-width:520px;width:100%;padding:10px;margin:8px 0 16px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:inherit}.integration-panel p{overflow-wrap:anywhere}.integration-panel>.heading-actions{flex-wrap:wrap;margin:16px 0}.integration-panel>button{margin:12px 8px 12px 0}

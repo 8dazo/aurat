@@ -7,9 +7,13 @@
     "aurat": "./src/cli.js"
   },
   "scripts": {
-    "test": "node --test src/*.test.js",
+    "test": "node --test src/*.test.js src/platform/*.test.js",
     "start": "node src/cli.js proxy",
-    "demo": "node src/cli.js test --suite examples/ticket-agent/suite.json"
+    "demo": "node src/cli.js test --suite examples/ticket-agent/suite.json",
+    "platform:init": "node src/platform/init.js",
+    "platform:dev": "node --env-file-if-exists=.env --env-file-if-exists=.aurat/platform.env src/platform/start.js",
+    "platform:mcp": "node --env-file-if-exists=.env --env-file-if-exists=.aurat/platform.env src/platform/stdio.js",
+    "platform:test": "node --test src/platform/*.test.js"
   },
   "engines": {
     "node": ">=22"

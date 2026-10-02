@@ -22,6 +22,10 @@
   <a href="https://github.com/8dazo/aurat/issues">Feedback</a>
 </p>
 
+## Private workspace and integrations
+
+The local control plane now supports persistent projects and reports, GitHub repository verification and workflow sync, OTLP JSON ingestion, behavioral contracts, signed webhook jobs, and MCP tools. Use Node 24, run `npm run platform:init` and `npm run platform:dev`, then follow the [workspace setup and Neon delivery plan](docs/platform-backend.md). These capabilities are local; the public site remains a demo until hosted storage and account authentication are connected.
+
 ## Why Aurat
 
 An agent can return a plausible answer and still create the same ticket twice. A refactor can change a tool argument, skip a required step, or mishandle a retry. Comparing model responses alone will not catch every mistake in the application around them.

@@ -1,5 +1,12 @@
 # Aurat.ai roadmap
 
+Current implementation and the remaining production gaps are tracked in
+[the platform backend delivery plan](platform-backend.md). The local control
+plane now supports persistent projects/reports, GitHub API connections and
+workflow status sync, OTLP ingestion, stored-trace contracts, signed webhook jobs
+and MCP tools. These are local development capabilities; the public Vercel site
+still awaits persistent hosted storage and account authentication.
+
 ## Phase 0 — validate the pain
 
 - interview AI engineering teams
