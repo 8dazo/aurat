@@ -23,11 +23,11 @@ export function preparePublic(target) {
   // A public copy must not suggest that ChatGPT's trusted-header auth works here.
   const dashboard=path.join(target,'components/dashboard.tsx');
   let source=readFileSync(dashboard,'utf8');
-  source=source.replace('/signin-with-chatgpt?return_to=%2Fapp','/app?demo=1')
-    .replace('Sign in to connect','Explore workspace')
-    .replace('Real Scout reproduction. Changes here are read-only.','Public demo · read-only. Authentication and saved projects are not enabled on this deployment.')
-    .replace('Sign in to save projects and reports.','This deployment is a read-only demo. Saving projects and reports is not enabled.')
-    .replace('Example workspace · sign in to save your own data','Example workspace · read-only demo');
+  source=source.replace('/signin-with-chatgpt?return_to=%2Fapp','/app/connections/')
+    .replace('Sign in to connect','Connect workspace')
+    .replace('Real Scout reproduction. Changes here are read-only.','Example data · Connect your workspace from Connections to save projects and reports.')
+    .replace('Sign in to save projects and reports.','Connect your workspace from Connections to save projects and reports.')
+    .replace('Example workspace · sign in to save your own data','Example workspace · connect from Connections');
   writeFileSync(dashboard,source);
   const routes=['app','app/projects','app/runs','app/scenarios','app/fixtures','app/connections','app/settings','app/runs/scout-original','app/runs/scout-fixed'];
   for(const route of routes){

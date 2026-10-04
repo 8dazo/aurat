@@ -6,9 +6,12 @@ import gateway from './index.mjs';
 
 let upstream, publicServer, base, received;
 const savedBinding = process.env.PLATFORM_URL;
+const savedWorkspace = process.env.WORKSPACE_URL;
 before(async () => {
-  upstream = createServer((req, res) => {
-    received = { url: req.url, headers: req.headers };
+  upstream = createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    received = { url: req.url, headers: req.headers, body: Buffer.concat(chunks).toString() };
     if (req.url === '/internal/app') {
       res.writeHead(308, { Location: '/internal/app/' });
       res.end();
@@ -21,6 +24,7 @@ before(async () => {
   }).listen(0, '127.0.0.1');
   await once(upstream, 'listening');
   process.env.PLATFORM_URL = `http://127.0.0.1:${upstream.address().port}/internal`;
+  process.env.WORKSPACE_URL = `http://127.0.0.1:${upstream.address().port}/private`;
   publicServer = createServer(gateway).listen(0, '127.0.0.1');
   await once(publicServer, 'listening');
   base = `http://127.0.0.1:${publicServer.address().port}`;
@@ -28,6 +32,8 @@ before(async () => {
 after(async () => {
   if (savedBinding === undefined) delete process.env.PLATFORM_URL;
   else process.env.PLATFORM_URL = savedBinding;
+  if (savedWorkspace === undefined) delete process.env.WORKSPACE_URL;
+  else process.env.WORKSPACE_URL = savedWorkspace;
   await Promise.all([new Promise(resolve => upstream.close(resolve)), new Promise(resolve => publicServer.close(resolve))]);
 });
 test('bound target receives paths and queries, including assets', async () => {
@@ -64,8 +70,30 @@ test('HEAD and upstream 404 work; mutation requests are rejected', async () => {
   const head = await fetch(base + '/docs/', { method: 'HEAD' });
   assert.equal(head.status, 200); assert.equal(await head.text(), '');
   assert.equal((await fetch(base + '/missing')).status, 404);
-  const mutation = await fetch(base + '/api/workspace', { method: 'POST', body: '{}' });
+  const mutation = await fetch(base + '/docs/', { method: 'POST', body: '{}' });
   assert.equal(mutation.status, 405); assert.equal(mutation.headers.get('allow'), 'GET, HEAD');
+});
+test('API credentials and exact webhook bodies reach only the workspace binding', async () => {
+  const body = '{ "exact": "signed bytes" }';
+  await fetch(base + '/api/webhooks/github', { method: 'POST', body, headers: {
+    authorization: 'Bearer synthetic-private-token', 'content-type': 'application/json',
+    'x-hub-signature-256': 'synthetic-signature', cookie: 'private-cookie',
+    'oai-authenticated-user-id': 'forged-owner',
+  }});
+  assert.equal(received.url, '/private/api/webhooks/github');
+  assert.equal(received.body, body);
+  assert.equal(received.headers.authorization, 'Bearer synthetic-private-token');
+  assert.equal(received.headers['x-hub-signature-256'], 'synthetic-signature');
+  assert.equal(received.headers.cookie, undefined);
+  assert.equal(received.headers['oai-authenticated-user-id'], undefined);
+  await fetch(base + '/docs/', { headers: { authorization: 'Bearer synthetic-private-token' }});
+  assert.equal(received.headers.authorization, undefined);
+});
+test('missing workspace binding never falls through to the public frontend', async () => {
+  const binding = process.env.WORKSPACE_URL;
+  delete process.env.WORKSPACE_URL;
+  assert.equal((await fetch(base + '/api/workspace')).status, 503);
+  process.env.WORKSPACE_URL = binding;
 });
 test('missing binding fails clearly; client-controlled hosts cannot choose an upstream', async () => {
   const binding = process.env.PLATFORM_URL;

@@ -25,24 +25,17 @@ export function disconnectApi() {
 }
 export async function connectApi(baseValue: string, token: string) {
   const base = new URL(baseValue);
-  // This is a local development workspace, not a generic outbound URL connector.
+  const hosted = base.protocol === "https:" && base.origin === window.location.origin;
+  const local = base.protocol === "http:" && ["localhost", "127.0.0.1"].includes(base.hostname) && window.location.protocol === "http:" && ["localhost", "127.0.0.1"].includes(window.location.hostname);
   if (
-    !["localhost", "127.0.0.1"].includes(base.hostname) ||
-    base.protocol !== "http:" ||
+    !(hosted || local) ||
     base.username ||
     base.password ||
     base.pathname !== "/" ||
     base.search ||
     base.hash
   )
-    throw Error("Use the local API URL, such as http://127.0.0.1:4318");
-  if (
-    window.location.protocol !== "http:" ||
-    !["localhost", "127.0.0.1"].includes(window.location.hostname)
-  )
-    throw Error(
-      "Open the dashboard locally to connect the temporary database. Hosted access will be enabled with Neon and account authentication.",
-    );
+    throw Error("Use this site's HTTPS origin or a local API from a local dashboard");
   if (token.length < 32)
     throw Error("Enter your server workspace token (at least 32 characters)");
   const request = async (path: string, body?: unknown) => {

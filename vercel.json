@@ -14,8 +14,22 @@
           "service": "platform",
           "format": "url",
           "env": "PLATFORM_URL"
+        },
+        {
+          "type": "service",
+          "service": "workspace",
+          "format": "url",
+          "env": "WORKSPACE_URL"
         }
       ]
+    },
+    "workspace": {
+      "root": ".",
+      "framework": "node",
+      "runtime": "node",
+      "entrypoint": "src/platform/vercel.js",
+      "installCommand": "npm ci",
+      "buildCommand": "npm run platform:migrate"
     },
     "platform": {
       "root": "apps/vercel-platform",

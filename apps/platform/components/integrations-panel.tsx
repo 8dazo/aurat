@@ -27,6 +27,9 @@ type Entry = LangfuseConnection & {
 export default function IntegrationsPanel() {
   const api = useApiSession();
   const [base, setBase] = useState("http://127.0.0.1:4318");
+  useEffect(() => {
+    if (window.location.protocol === "https:") setBase(window.location.origin);
+  }, []);
   const [token, setToken] = useState("");
   const [project, setProject] = useState("");
   const [contract, setContract] = useState("");
@@ -97,9 +100,9 @@ export default function IntegrationsPanel() {
     >
       <h2>Private API workspace</h2>
       <p>
-        Connect your private backend, using SQLite now or Postgres when
-        configured. Workspace tokens stay in memory and are cleared on reload.
-        Team accounts and hosted access are still being built.
+        Connect your private workspace. Hosted storage uses Postgres; local
+        development also supports SQLite. Workspace tokens stay in memory and
+        are cleared on reload. Access keys grant full access to this workspace.
       </p>
       {!api ? (
         <form
@@ -108,10 +111,10 @@ export default function IntegrationsPanel() {
             void act(async () => {
               await connectApi(base, token);
               setToken("");
-            }, "Local workspace connected");
+            }, "Workspace connected");
           }}
         >
-          <Label htmlFor="api-base">Local API URL</Label>
+          <Label htmlFor="api-base">API URL</Label>
           <Input
             id="api-base"
             value={base}
@@ -126,7 +129,7 @@ export default function IntegrationsPanel() {
             onChange={(e) => setToken(e.target.value)}
           />
           <Button disabled={busy} type="submit">
-            Connect local workspace
+            Connect workspace
           </Button>
         </form>
       ) : (
