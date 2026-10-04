@@ -33,6 +33,19 @@ generated password privately and change it by generating a new salted hash.
 Rotate the session secret to revoke all sessions. Sign-out clears the browser
 cookie. Password reset and team accounts are not implemented.
 
+Use the verified production address `https://aurat-eight.vercel.app/app/`.
+The apex `aurat.ai` currently redirects to `www.aurat.ai`, which still needs
+Vercel ownership verification. Only verified project domains belong in the
+production origin allowlist. Session secrets and database URLs belong in Vercel
+environment variables, not Connections.
+
+The public frontend copies components into ignored generated directories.
+Its Tailwind stylesheet explicitly registers those directories with `@source`;
+without that registration, the export omitted responsive sidebar and component
+utilities. The workspace browser workflow tests the built public export over
+HTTPS, including sign-in, project creation, all navigation routes, session
+restoration, mobile sidebar dismissal, and widths 1440, 820 and 390.
+
 This is one owner account with full access to one workspace, not multi-user SaaS.
 Per-instance bounded sign-in throttling complements platform firewall controls;
 it is not a distributed lockout mechanism. Cookie-authenticated writes require
