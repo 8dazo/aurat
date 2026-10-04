@@ -20,7 +20,7 @@ const out = path.resolve('apps/vercel-platform/out');
 const screenshots = path.resolve('.aurat/ui-verification');
 await mkdir(screenshots, { recursive: true });
 const store = new WorkspaceStore(':memory:');
-let apiHandler, browser;
+let apiHandler, browser, page;
 const types = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.txt':'text/x-component', '.json':'application/json', '.webp':'image/webp', '.svg':'image/svg+xml', '.png':'image/png', '.ico':'image/x-icon' };
 const frontend = createServer(async (req, res) => {
   try {
@@ -52,7 +52,7 @@ const errors = [];
 try {
   browser = await chromium.launch({headless:true});
   const context = await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:1000}});
-  const page = await context.newPage();
+  page = await context.newPage();
   page.on('pageerror',e=>errors.push(e.message));
   page.setDefaultTimeout(15000);
   await page.goto(base + '/app/');
@@ -101,6 +101,7 @@ try {
   assert.deepEqual(errors,[], 'Client errors');
   console.log('PASS: sign-in, automatic API connection, project creation, seven navigation routes, reload persistence, three viewport sizes, mobile sidebar and sign-out.');
 } catch (error) {
+  if (page) await page.screenshot({path:path.join(screenshots,'failure.png'),fullPage:true}).catch(()=>{});
   console.error(error);
   console.error('Client errors:',errors);
   process.exitCode = 1;

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, LockKeyhole, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,17 @@ export default function SignIn() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch('/api/auth/session', { credentials: 'same-origin', signal: controller.signal })
+      .then(response => {
+        if (response.ok) {
+          const next = new URLSearchParams(window.location.search).get('returnTo') ?? '/app/';
+          window.location.replace(/^\/app(?:\/|\?|$)/.test(next) ? next : '/app/');
+        }
+      }).catch(() => {});
+    return () => controller.abort();
+  }, []);
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setBusy(true); setError('');
     try {
