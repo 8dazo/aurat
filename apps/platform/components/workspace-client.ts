@@ -1,7 +1,8 @@
 "use client";
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 export type ApiSession = {
   base: string;
+  hosted?: boolean;
   request: (path: string, body?: unknown) => Promise<any>;
 };
 let current: ApiSession | null = null;
@@ -13,6 +14,11 @@ const subscribe = (fn: () => void) => {
   };
 };
 export function useApiSession() {
+  useEffect(() => {
+    if (window.location.protocol === "https:" && new URLSearchParams(window.location.search).get("demo") !== "1") {
+      void connectHosted().catch(() => {});
+    }
+  }, []);
   return useSyncExternalStore(
     subscribe,
     () => current,
@@ -22,6 +28,37 @@ export function useApiSession() {
 export function disconnectApi() {
   current = null;
   listeners.forEach((fn) => fn());
+}
+let connecting: Promise<void> | null = null;
+export function connectHosted() {
+  if (current) return Promise.resolve();
+  if (connecting) return connecting;
+  connecting = (async () => {
+    const request = async (path: string, body?: unknown) => {
+      const response = await fetch(path, {
+        method: body !== undefined ? "POST" : "GET", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        redirect: "error", signal: AbortSignal.timeout(30000),
+      });
+      if (response.status === 401) {
+        window.location.assign('/signin/?returnTo=' + encodeURIComponent(window.location.pathname + window.location.search));
+        throw Error("Sign in to your workspace");
+      }
+      const data = await response.json();
+      if (!response.ok) throw Error(typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string' ? data.error : "Workspace request failed");
+      return data;
+    };
+    await request('/api/workspace');
+    current = { base: window.location.origin, hosted: true, request };
+    listeners.forEach(fn => fn());
+  })().finally(() => { connecting = null; });
+  return connecting;
+}
+export async function signOut() {
+  await fetch('/api/auth/signout', { method: 'POST', credentials: 'same-origin' });
+  disconnectApi();
+  window.location.assign('/signin/');
 }
 export async function connectApi(baseValue: string, token: string) {
   const base = new URL(baseValue);

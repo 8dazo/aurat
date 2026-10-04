@@ -12,6 +12,9 @@ export function MotionProvider({children}:{children:React.ReactNode}){
   const [reduced,setReduced]=useState(false);
   const path=usePathname();
   useEffect(()=>{
+    document.documentElement.dataset.surface=path?.startsWith('/app')||path?.startsWith('/signin')?'workspace':'marketing';
+  },[path]);
+  useEffect(()=>{
     const preference=matchMedia('(prefers-reduced-motion: reduce)');
     const sync=()=>setReduced(preference.matches);
     sync();preference.addEventListener('change',sync);

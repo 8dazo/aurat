@@ -42,7 +42,7 @@ test('bound target receives paths and queries, including assets', async () => {
     assert.equal(response.status, 200);
     assert.equal(await response.text(), 'public export');
     assert.equal(received.url, '/internal' + path);
-    assert.equal(response.headers.get('cache-control'), 'public, max-age=60');
+    assert.equal(response.headers.get('cache-control'), path.startsWith('/app') ? 'private, no-store' : 'public, max-age=60');
   }
 });
 test('private binding URLs do not leak through redirects', async () => {

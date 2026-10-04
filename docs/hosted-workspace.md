@@ -17,10 +17,26 @@ Do not reuse production storage or keys in preview deployments. The workspace
 build applies tracked additive migrations in the dedicated `aurat` schema.
 Database setup failures fail the deployment rather than falling back to SQLite.
 
-Open Connections, use the site's HTTPS origin as API URL, and enter the
-workspace key. The key stays in memory and clears on reload. A key grants
-full access to a single workspace; team accounts and per-user permissions
-are not implemented. Production database credentials never enter the browser.
+Hosted dashboard users sign in at `/signin/`. The gateway verifies the configured
+owner password using scrypt and issues an eight-hour Secure, HttpOnly, SameSite
+session cookie. The dashboard reconnects automatically, including after reload.
+Connections has no hosted API URL or workspace-key fields. Verified sessions
+allow the gateway to inject the private workspace bearer key server-side;
+database credentials and workspace keys never enter browser JavaScript.
+
+Initialize the owner once with `node services/vercel-gateway/init-account.mjs`
+from the repository root. It creates ignored `.aurat/account.env`. Configure
+`AURAT_LOGIN_USER`, `AURAT_LOGIN_PASSWORD_HASH`, `AURAT_SESSION_SECRET`, and an
+explicit comma-separated `AURAT_ALLOWED_ORIGINS` in production Vercel environment
+variables. Upload the password hash, never the plaintext password. Keep the local
+generated password privately and change it by generating a new salted hash.
+Rotate the session secret to revoke all sessions. Sign-out clears the browser
+cookie. Password reset and team accounts are not implemented.
+
+This is one owner account with full access to one workspace, not multi-user SaaS.
+Per-instance bounded sign-in throttling complements platform firewall controls;
+it is not a distributed lockout mechanism. Cookie-authenticated writes require
+an exact allowed Origin; bearer integrations retain their existing authentication.
 
 Hosted jobs are request-driven: authenticated job polling or trigger requests
 advance one leased job. Continuous unattended scheduling requires a durable

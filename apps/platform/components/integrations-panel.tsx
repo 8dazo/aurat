@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { connectApi, disconnectApi, useApiSession } from "./workspace-client";
+import { connectApi, disconnectApi, signOut, useApiSession } from "./workspace-client";
 import LangfusePanel, { type LangfuseConnection } from "./langfuse-panel";
 type Entry = LangfuseConnection & {
   id: string;
@@ -31,6 +31,8 @@ export default function IntegrationsPanel() {
     if (window.location.protocol === "https:") setBase(window.location.origin);
   }, []);
   const [token, setToken] = useState("");
+  const [hosted, setHosted] = useState<boolean | null>(null);
+  useEffect(() => { setHosted(window.location.protocol === 'https:'); }, []);
   const [project, setProject] = useState("");
   const [contract, setContract] = useState("");
   const [projects, setProjects] = useState<Entry[]>([]);
@@ -61,6 +63,7 @@ export default function IntegrationsPanel() {
       api.request("/health"),
     ]);
     setProjects(w.projects);
+    setProject(current => w.projects.some((p: Entry) => p.id === current) ? current : w.projects[0]?.id ?? '');
     setConnections(c);
     setContracts(b);
     setTriggers(t);
@@ -71,12 +74,14 @@ export default function IntegrationsPanel() {
   useEffect(() => {
     setIssuedToken(null);
     if (!api) return;
-    void load().catch((e) => setError(e.message));
-    const timer = setInterval(
-      () => void load().catch((e) => setError(e.message)),
-      4000,
-    );
-    return () => clearInterval(timer);
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try { await load(); } catch (e) { if (!stopped) setError(e instanceof Error ? e.message : 'Could not load integrations'); }
+      if (!stopped) timer = setTimeout(poll, 4000);
+    };
+    void poll();
+    return () => { stopped = true; clearTimeout(timer); };
   }, [api]);
   async function act(action: () => Promise<unknown>, message: string) {
     setBusy(true);
@@ -98,13 +103,12 @@ export default function IntegrationsPanel() {
       className="settings-panel integration-panel"
       aria-label="Working integrations"
     >
-      <h2>Private API workspace</h2>
+      <h2>Workspace integrations</h2>
       <p>
-        Connect your private workspace. Hosted storage uses Postgres; local
-        development also supports SQLite. Workspace tokens stay in memory and
-        are cleared on reload. Access keys grant full access to this workspace.
+        Your hosted workspace uses Neon Postgres automatically. Connect the
+        tools that produce your regression evidence below.
       </p>
-      {!api ? (
+      {!api && hosted !== false ? <p>Sign in to manage integrations. <a className="text-link" href="/signin/">Sign in →</a></p> : !api ? (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -136,10 +140,10 @@ export default function IntegrationsPanel() {
         <>
           <div className="setting-row">
             <span>
-              Connected to {api.base} · {storage}
+              <span className="storage-indicator"/> {api.hosted ? (storage === 'postgres' ? 'Neon Postgres · connected' : 'Workspace database · connected') : `Connected to ${api.base} · ${storage}`}
             </span>
-            <Button variant="outline" onClick={disconnectApi}>
-              Disconnect
+            <Button variant="outline" onClick={() => api.hosted ? void signOut() : disconnectApi()}>
+              {api.hosted ? 'Sign out' : 'Disconnect'}
             </Button>
           </div>
           <Label htmlFor="integration-project">Project</Label>
@@ -162,6 +166,7 @@ export default function IntegrationsPanel() {
             Create a project using the dashboard’s New project button after
             connecting.
           </p>
+          <div className="integration-grid"><section className="integration-card"><h3>Trace sources</h3><p>Verify a repository or import captured provider traces.</p>
           <div className="heading-actions">
             <Button
               disabled={busy || !project}
@@ -206,6 +211,7 @@ export default function IntegrationsPanel() {
               onChange={load}
             />
           ) : null}
+          </section><section className="integration-card"><h3>Evidence and contracts</h3><p>Import captured spans, then verify their behavior.</p>
           <Label htmlFor="otel-import">OTLP JSON spans</Label>
           <Input
             id="otel-import"
@@ -299,7 +305,7 @@ export default function IntegrationsPanel() {
             These triggers compare stored traces; they do not run your
             repository or call a live model.
           </p>
-          <h3>Connections</h3>
+          </section><section className="integration-card"><h3>Active connections</h3>
           {connections.length ? (
             connections.map((c) => (
               <div key={c.id} className="setting-row">
@@ -377,7 +383,7 @@ export default function IntegrationsPanel() {
           ) : (
             <p>No jobs yet.</p>
           )}
-          <h3>GitHub CI report delivery</h3>
+          </section><section className="integration-card"><h3>GitHub CI report delivery</h3>
           <p>
             Create a project-scoped upload token. Add it as the GitHub secret
             AURAT_REPORT_TOKEN; it can upload reports only for its project. The
@@ -460,12 +466,13 @@ export default function IntegrationsPanel() {
                 </Button>
               </div>
             ))}
-          <h3>MCP</h3>
+          </section><section className="integration-card"><h3>MCP</h3>
           <p>
             Authenticated Streamable HTTP: {api.base}/mcp. For a local client,
             launch <code>npm run platform:mcp</code>. Tools list projects,
             connections and runs, create contracts, and verify stored traces.
           </p>
+          </section></div>
         </>
       )}
       {error && (

@@ -1,5 +1,6 @@
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { authRoute, session, sameOrigin } from './session.mjs';
 
 const requestHeaders = [
   'accept', 'accept-language', 'if-none-match', 'if-modified-since', 'range', 'if-range',
@@ -19,6 +20,16 @@ export default async function gateway(req, res) {
     return;
   }
   try {
+    if (await authRoute(req, res, incoming.pathname.replace(/\/$/, ''))) return;
+    const signedIn = session(req);
+    if (process.env.AURAT_LOGIN_USER && incoming.pathname.startsWith('/app') && !signedIn && incoming.searchParams.get('demo') !== '1') {
+      res.writeHead(302, { Location: '/signin/?returnTo=' + encodeURIComponent(incoming.pathname + incoming.search), 'Cache-Control': 'no-store' });
+      res.end(); return;
+    }
+    if (privateApi && signedIn && !['GET', 'HEAD'].includes(req.method) && !sameOrigin(req)) {
+      res.writeHead(403, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: 'Origin is not allowed' })); return;
+    }
     const binding = privateApi ? process.env.WORKSPACE_URL : process.env.PLATFORM_URL;
     if (!binding) {
       res.writeHead(503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -37,6 +48,10 @@ export default async function gateway(req, res) {
       const value = req.headers[name];
       if (typeof value === 'string') headers.set(name, value);
     }
+    // A verified browser session becomes a server-to-server credential. Never
+    // expose the workspace key or forward browser cookies to an internal service.
+    if (privateApi && signedIn && !headers.has('authorization') && process.env.AURAT_WORKSPACE_TOKEN)
+      headers.set('authorization', `Bearer ${process.env.AURAT_WORKSPACE_TOKEN}`);
     // This service only serves public exports; do not forward credentials or
     // Sites trusted-user headers to a target that has no standalone auth.
     const upstream = await fetch(target, {
@@ -47,6 +62,8 @@ export default async function gateway(req, res) {
     for (const [name, value] of upstream.headers) {
       if (!excludedResponseHeaders.has(name)) res.setHeader(name, value);
     }
+    if (privateApi || incoming.pathname.startsWith('/app')) res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Aurat-Revision', process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? 'development');
     const location = upstream.headers.get('location');
     if (location) {
       const destination = new URL(location, target);

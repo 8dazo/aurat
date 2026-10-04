@@ -1,0 +1,103 @@
+/* Workspace surfaces are scoped so the marketing site keeps its own palette. */
+html[data-surface="workspace"] {
+  --background:#0c111b; --foreground:#edf2fc; --card:#131c2b;
+  --primary:#a7c8ff; --border:#2b3850; color-scheme:dark;
+  --color-primary-foreground:#102340; --color-secondary:#1c2940;
+  --color-muted:#1c2940; --color-muted-foreground:#a3b2ca;
+  --color-accent:#223454; --color-destructive:#ffafa9;
+  --color-sidebar:#0e1522; --color-sidebar-foreground:#adbad0;
+  --color-sidebar-accent:#1e2e49; --color-sidebar-accent-foreground:#edf2fc;
+}
+.platform-shell { min-height:100svh; width:100%; overflow-x:clip; }
+.platform-shell .app-inset { background:#0c111b!important; min-width:0; }
+.platform-shell .app-sidebar,.app-sidebar[data-mobile="true"] { background:#0e1522!important; border-color:#263348; }
+.platform-shell .app-sidebar [data-slot="sidebar-inner"] { background:#0e1522; }
+.app-sidebar [data-slot="sidebar-menu-button"] { font-size:14px!important; min-height:44px; border-radius:8px!important; }
+.app-sidebar [data-slot="sidebar-menu-button"][data-active="true"] { background:#1d3152!important; border-color:#355482!important; color:#d6e5ff!important; box-shadow:inset 3px 0 #9dc2ff!important; }
+.app-sidebar [data-slot="sidebar-menu-button"]:hover { background:#1a2940!important; color:#fff!important; }
+.platform-shell .app-topbar { height:68px; min-height:68px; padding:0 32px; background:#0e1522f2; border-color:#263348; backdrop-filter:blur(12px); }
+.platform-shell .dashboard-content { width:100%; max-width:1360px; margin:0 auto; padding:32px clamp(20px,3vw,44px) 64px; }
+.platform-shell .page-heading { margin-bottom:28px; align-items:flex-start; gap:20px; }
+.platform-shell .page-heading h1 { font-size:30px; line-height:1.2; letter-spacing:-.8px; color:#f0f4ff; }
+.platform-shell .page-heading p { color:#a1afc5; max-width:640px; font-size:14px; line-height:1.65; }
+.platform-shell .page-overline { color:#8aa2c6; font-size:11px; letter-spacing:1.4px; }
+.platform-shell .page-heading button { height:40px; flex-shrink:0; }
+.platform-shell .muted,.app-sidebar .workspace-label small,.app-sidebar .user-block small { color:#94a5bf; }
+.platform-shell .stat-grid { grid-template-columns:repeat(4,minmax(0,1fr)); background:transparent; border:0; box-shadow:none; gap:16px; overflow:visible; margin-bottom:32px; }
+.platform-shell .stat { padding:22px; border:1px solid #29374e!important; border-radius:12px; background:#131c2b; min-width:0; }
+.platform-shell .stat>span { color:#b1bfd5; font-size:13px; }
+.platform-shell .stat strong { color:#f0f5ff; font-size:34px; font-variant-numeric:tabular-nums; }
+.platform-shell .stat small { color:#93a3bd; line-height:1.6; font-size:12px; }
+.platform-shell .table-wrap { width:100%; max-width:100%; overflow:auto; background:#121b2a; border-color:#2b3850; box-shadow:none; border-radius:12px; }
+.platform-shell .table-wrap table { width:100%; min-width:660px; }
+.platform-shell .table-wrap th { background:#19253a; color:#b3c2d9; height:48px; }
+.platform-shell .table-wrap td { border-bottom-color:#263248; height:64px; }
+.platform-shell .table-wrap tbody tr:hover,.platform-shell .table-wrap tbody tr:focus-within { background:#1b2b43; }
+.platform-shell .run-link,.platform-shell .panel-heading>a,.platform-shell .text-link { color:#b1cfff; }
+.platform-shell .overview-bottom { background:#131c2b; border-color:#2b3850; box-shadow:none; border-radius:12px; overflow:hidden; }
+.platform-shell .setup-panel { border-color:#2b3850; }
+.platform-shell .project-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); gap:20px; }
+.platform-shell .project-card,.platform-shell .settings-panel { background:#131c2b; border-color:#2b3850; border-radius:12px; box-shadow:none; }
+.platform-shell .setting-row { gap:16px; border-color:#2b3850; min-width:0; }
+.platform-shell .setting-row>div { min-width:0; overflow-wrap:anywhere; }
+.platform-shell .setting-row button { flex-shrink:0; }
+.platform-shell .demo-banner { background:#18263a; border-color:#304767; color:#bfd1ed; }
+.platform-shell .demo-banner a { color:#c2d9ff; }
+.build-label { display:block; color:#8ca0c1; font:11px/1.6 ui-monospace,monospace; padding-top:8px; }
+.platform-shell .table-controls { gap:12px; margin-bottom:18px; }
+.platform-shell .search-field { max-width:420px; flex:1 1 220px; }
+.platform-shell .heading-actions { display:flex; flex-direction:row; gap:10px; flex-wrap:wrap; }
+.platform-shell .integration-panel { padding:24px; margin:0; }
+.platform-shell .integration-panel>h2 { font-size:18px; margin-bottom:10px; }
+.platform-shell .integration-panel>p { margin-bottom:20px; max-width:700px; }
+.storage-indicator { display:inline-block; width:8px; height:8px; border-radius:50%; background:#70dbaf; margin-right:6px; }
+.integration-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; margin-top:24px; align-items:start; }
+.integration-card { min-width:0; padding:22px; background:#0f1725; border:1px solid #2b3850; border-radius:10px; }
+.integration-card h3 { font-size:16px; color:#edf2fc; margin:0 0 12px; letter-spacing:-.25px; }
+.integration-card h3:not(:first-child) { margin-top:28px; }
+.integration-card p { font-size:13px; line-height:1.7; color:#9fadc4; margin-bottom:14px; }
+.integration-card label { display:block; margin:16px 0 8px; font-size:13px; }
+.integration-card button { margin:8px 8px 8px 0; max-width:100%; white-space:normal; height:auto; min-height:38px; text-align:left; }
+.integration-card .heading-actions button { margin:0; }
+.integration-card .heading-actions { margin:16px 0; }
+.integration-card input { max-width:100%; }
+.integration-card pre,.platform-shell .connection-guide pre { padding:14px; border-radius:8px; background:#09111e; border:1px solid #263348; font-size:12px; }
+.integration-card .setting-row { flex-wrap:wrap; padding:14px 0; }
+.integration-card .setting-row>div { flex:1 1 180px; }
+.platform-shell .connection-guide { margin-top:20px; padding:22px 24px; border:1px solid #2b3850; border-radius:12px; background:#131c2b; }
+.connection-guide summary { cursor:pointer; color:#c8d8f0; font-size:14px; font-weight:500; }
+.connection-guide p,.connection-guide pre { margin:16px 0; }
+.connection-guide .text-link { display:flex; margin-top:16px; }
+.signin-layout { min-height:100svh; max-width:470px; margin:0 auto; padding:48px 24px; display:flex; flex-direction:column; align-items:center; gap:32px; }
+.signin-card { width:100%; padding:32px; background:#131c2b; border:1px solid #2b3850; border-radius:16px; box-shadow:0 24px 80px #0003; }
+.signin-icon { display:inline-flex; padding:12px; color:#aacbff; background:#20324e; border-radius:12px; margin-bottom:24px; }
+.signin-card .page-overline { color:#92afd9; font-size:11px; margin-bottom:12px; }
+.signin-card h1 { color:#f0f4ff; font-size:30px; margin-bottom:14px; }
+.signin-card p { color:#a3b2ca; font-size:14px; line-height:1.7; }
+.signin-card form { display:grid; gap:12px; margin:28px 0 22px; }
+.signin-card label { color:#c5d2e6; font-size:13px; }
+.signin-card input { min-height:42px; background:#0c1422; border-color:#354763; }
+.signin-card button { margin-top:12px; min-height:44px; }
+.signin-card small { color:#94a7c4; }
+@media(min-width:768px) and (max-width:1050px) {
+  .platform-shell .stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .integration-grid { grid-template-columns:minmax(0,1fr); }
+  .platform-shell .overview-bottom { grid-template-columns:minmax(0,1fr); }
+  .platform-shell .setup-panel { border-left:0; border-top:1px solid #2b3850; }
+}
+@media(max-width:767px) {
+  .platform-shell .app-topbar { padding:0 16px; min-height:60px; height:60px; }
+  .platform-shell .dashboard-content { padding:24px 16px 48px; }
+  .platform-shell .page-heading { flex-wrap:wrap; gap:16px; }
+  .platform-shell .page-heading h1 { font-size:26px; }
+  .platform-shell .stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+  .platform-shell .stat { padding:16px; }
+  .platform-shell .stat strong { font-size:28px; }
+  .platform-shell .overview-bottom,.integration-grid { grid-template-columns:minmax(0,1fr); }
+  .platform-shell .setup-panel { border-left:0; border-top:1px solid #2b3850; }
+  .platform-shell .integration-panel,.integration-card { padding:18px; }
+  .platform-shell .table-controls { flex-wrap:wrap; }
+  .platform-shell .setting-row { flex-wrap:wrap; }
+  .signin-layout { padding:32px 18px; }
+  .signin-card { padding:24px; }
+}
