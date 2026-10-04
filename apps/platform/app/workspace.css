@@ -47,7 +47,7 @@ html[data-surface="workspace"] {
 .platform-shell .table-controls { gap:12px; margin-bottom:18px; }
 .platform-shell .search-field { max-width:420px; flex:1 1 220px; }
 .platform-shell .heading-actions { display:flex; flex-direction:row; gap:10px; flex-wrap:wrap; }
-.platform-shell .integration-panel { padding:24px; margin:0; }
+.platform-shell .integration-panel { padding:24px; margin:0; max-width:none; }
 .platform-shell .integration-panel>h2 { font-size:18px; margin-bottom:10px; }
 .platform-shell .integration-panel>p { margin-bottom:20px; max-width:700px; }
 .storage-indicator { display:inline-block; width:8px; height:8px; border-radius:50%; background:#70dbaf; margin-right:6px; }
